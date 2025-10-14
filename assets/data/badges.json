@@ -1,0 +1,119 @@
+{
+  "badges": [
+    {
+      "id": "borgo-lover",
+      "title": "Borgo Lover",
+      "description": "Primo borgo visitato",
+      "icon": "heart",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "borghiVisitati",
+      "threshold": 1
+    },
+    {
+      "id": "esploratrice",
+      "title": "Esploratrice",
+      "description": "3 borghi visitati",
+      "icon": "map-pin",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "borghiVisitati",
+      "threshold": 3
+    },
+    {
+      "id": "instancabile",
+      "title": "Instancabile",
+      "description": "10 borghi visitati",
+      "icon": "globe",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "borghiVisitati",
+      "threshold": 10
+    },
+    {
+      "id": "collezionista",
+      "title": "Collezionista",
+      "description": "50 borghi visitati",
+      "icon": "award",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "borghiVisitati",
+      "threshold": 50
+    },
+
+    {
+      "id": "fotografa",
+      "title": "Fotografa",
+      "description": "5 foto caricate",
+      "icon": "camera",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "fotoCaricate",
+      "threshold": 5
+    },
+    {
+      "id": "fotografa-esperta",
+      "title": "Fotografa Esperta",
+      "description": "20 foto caricate",
+      "icon": "camera",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "fotoCaricate",
+      "threshold": 20
+    },
+
+    {
+      "id": "curiosona",
+      "title": "Curiosona",
+      "description": "10 schede borgo aperte",
+      "icon": "search",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "schedeAperte",
+      "threshold": 10
+    },
+
+    {
+      "id": "evento-local",
+      "title": "Evento Local",
+      "description": "Primo evento a cui partecipi",
+      "icon": "calendar",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "eventiPartecipati",
+      "threshold": 1
+    },
+    {
+      "id": "festivaliera",
+      "title": "Festivaliera",
+      "description": "3 eventi in borghi diversi",
+      "icon": "tickets",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "eventiPartecipati",
+      "threshold": 3
+    },
+
+    {
+      "id": "completa-regione",
+      "title": "Completa",
+      "description": "Almeno 1 borgo in ogni provincia/area della regione",
+      "icon": "map",
+      "scope": "region",
+      "type": "coverage",
+      "metric": "provinceCoperte",
+      "coverageOf": "provinceTotali"
+    },
+
+    {
+      "id": "viaggiatrice-liguria",
+      "title": "Viaggiatrice Liguria",
+      "description": "3 borghi in Liguria",
+      "icon": "map-pin",
+      "scope": "region:liguria",
+      "type": "threshold",
+      "metric": "borghiVisitati:liguria",
+      "threshold": 3
+    }
+  ]
+}

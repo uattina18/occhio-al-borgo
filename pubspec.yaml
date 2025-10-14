@@ -1,0 +1,47 @@
+name: occhio_al_borgo
+description: "A new Flutter project."
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  shared_preferences: ^2.3.2
+  font_awesome_flutter: ^10.7.0
+  camera: ^0.11.2
+  geolocator: ^14.0.2
+  sensors_plus: ^7.0.0
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  image_picker: ^1.2.0
+  url_launcher: ^6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/logo_pages.png
+    - assets/images/login_bg.png
+    - assets/images/borgo_placeholder.png
+    - assets/data/eventi_liguria.json
+    - assets/data/borghi_min.json
+
+  fonts:
+    - family: Cinzel
+      fonts:
+        - asset: assets/fonts/Cinzel-Regular.ttf
+        - asset: assets/fonts/Cinzel-Bold.ttf
+          weight: 700
+    - family: Cormorant
+      fonts:
+        - asset: assets/fonts/CormorantGaramond-VariableFont_wght.ttf
