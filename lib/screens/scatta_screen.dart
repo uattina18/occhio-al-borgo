@@ -21,7 +21,7 @@ class ScattaScreen extends StatefulWidget {
 class _ScattaScreenState extends State<ScattaScreen> {
   CameraController? _controller;
   bool _isReady = false;
-  bool _isCapturing = false;
+  final bool _isCapturing = false;
   double? _latitude;
   double? _longitude;
   double? _azimuth;
@@ -113,53 +113,46 @@ class _ScattaScreenState extends State<ScattaScreen> {
     }
   }
 
-  Future<void> _capture() async {
-    if (_controller == null || _isCapturing) return;
-    setState(() => _isCapturing = true);
+  Future<void> checkPendingBorgo() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasPending = prefs.getBool('pending_borgo') ?? false;
 
-    try {
-      final image = await _controller!.takePicture();
-      final dir = await getApplicationDocumentsDirectory();
-      final path = p.join(
-        dir.path,
-        'borgo_${DateTime.now().millisecondsSinceEpoch}.jpg',
+    if (!hasPending) return;
+
+    final path = prefs.getString('pending_borgo_path');
+    final lat = prefs.getDouble('last_borgo_lat');
+    final lng = prefs.getDouble('last_borgo_lng');
+
+    final connectivity = await Connectivity().checkConnectivity();
+    final battery = Battery();
+    final level = await battery.batteryLevel;
+
+    if (connectivity != ConnectivityResult.none &&
+        level > 10 &&
+        lat != null &&
+        lng != null) {
+      final jsonData = await rootBundle.loadString(
+        'assets/data/borghi_min.json',
       );
-      await image.saveTo(path);
+      final List data = json.decode(jsonData);
+      double minDistance = double.infinity;
+      String? nearestName;
 
-      String? detectedName;
-      if (_latitude != null && _longitude != null) {
-        detectedName = await _identifyBorgo(_latitude!, _longitude!);
+      for (final borgo in data) {
+        final dist = (pow(lat - borgo['lat'], 2) + pow(lng - borgo['lng'], 2))
+            .toDouble();
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestName = borgo['name'];
+        }
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('last_borgo_photo', path);
       await prefs.setString(
         'last_borgo_name',
-        detectedName ?? 'Borgo sconosciuto',
+        nearestName ?? 'Borgo sconosciuto',
       );
-      await prefs.setDouble('last_borgo_lat', _latitude ?? 0);
-      await prefs.setDouble('last_borgo_lng', _longitude ?? 0);
-      await prefs.setDouble('last_borgo_azimuth', _azimuth ?? 0);
-      await prefs.setString(
-        'last_borgo_date',
-        DateTime.now().toIso8601String(),
-      );
-
-      if (!mounted) return;
-
-      Navigator.pop(context, {
-        'photo': path,
-        'name': detectedName,
-        'lat': _latitude,
-        'lng': _longitude,
-        'azimuth': _azimuth,
-      });
-    } catch (e) {
-      debugPrint('Errore scatto foto: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isCapturing = false);
-      }
+      await prefs.setBool('pending_borgo', false);
+      print('✅ Borgo riconosciuto in differita: $nearestName');
     }
   }
 

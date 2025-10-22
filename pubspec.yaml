@@ -10,21 +10,30 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
+
+  # 🔐 Autenticazione e preferenze
+  local_auth: ^2.3.0
   shared_preferences: ^2.3.2
-  font_awesome_flutter: ^10.7.0
-  camera: ^0.11.2
-  geolocator: ^14.0.2
-  sensors_plus: ^7.0.0
-  path_provider: ^2.1.5
-  path: ^1.9.1
-  image_picker: ^1.2.0
-  url_launcher: ^6.3.2
+
+  # 📷 Fotocamera e sensori
+  camera: ^0.11.0+1
+  geolocator: ^13.0.1
+  sensors_plus: ^6.0.1
+
+  # ⚡️ Batteria e connessione
+  battery_plus: ^5.0.2
+  connectivity_plus: ^6.0.3
+
+  # 🖼️ Interfaccia e immagini
+  cupertino_icons: ^1.0.8
+  image_picker: ^1.1.2
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
@@ -45,3 +54,10 @@ flutter:
     - family: Cormorant
       fonts:
         - asset: assets/fonts/CormorantGaramond-VariableFont_wght.ttf
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo_pages.png"
+  adaptive_icon_foreground: "assets/images/logo_pages.png"
+  adaptive_icon_background: "#FFFFFF"

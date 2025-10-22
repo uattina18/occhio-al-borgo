@@ -1,5 +1,7 @@
+// lib/screens/register_screen.dart
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -10,267 +12,181 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final TextEditingController _nomeController = TextEditingController();
-  final TextEditingController _cognomeController = TextEditingController();
-  final TextEditingController _usernameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _nomeController = TextEditingController();
+  final _cognomeController = TextEditingController();
+  final _usernameController = TextEditingController();
 
-  bool _showPassword = false;
-  bool _showConfirmPassword = false;
-  String _errorMessage = "";
-  String _error = "";
+  bool _loading = false;
+  final _formKey = GlobalKey<FormState>();
 
-  Future<void> _onRegister() async {
-    final nome = _nomeController.text.trim();
-    final cognome = _cognomeController.text.trim();
-    final username = _usernameController.text.trim();
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-    final confirm = _confirmController.text.trim();
+  Future<void> _register() async {
+    if (!_formKey.currentState!.validate()) return;
 
-    if ([nome, cognome, username, email, password, confirm].contains("")) {
-      setState(() {
-        _errorMessage = "Compila tutti i campi!";
-        _error = "";
-      });
-      return;
-    }
+    setState(() => _loading = true);
+    try {
+      // 🔍 1️⃣ Controllo username duplicato su Firestore
+      final check = await FirebaseFirestore.instance
+          .collection('utenti')
+          .where('username', isEqualTo: _usernameController.text.trim())
+          .get();
 
-    if (password != confirm) {
-      setState(() {
-        _error = "Le password non coincidono";
-        _errorMessage = "";
-      });
-      return;
-    }
+      if (check.docs.isNotEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Username già in uso.')));
+        setState(() => _loading = false);
+        return;
+      }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString("nome", nome);
-    await prefs.setString("cognome", cognome);
-    await prefs.setString("username", username);
-    await prefs.setString("email", email);
-    await prefs.setString("password", password);
+      // 🔐 2️⃣ Crea utente su Firebase Authentication
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text.trim(),
+          );
 
-    debugPrint("Registrazione completata!");
-    if (context.mounted) {
+      // 🧠 3️⃣ Salva dati aggiuntivi su Firestore
+      await FirebaseFirestore.instance
+          .collection('utenti')
+          .doc(credential.user!.uid)
+          .set({
+            'nome': _nomeController.text.trim(),
+            'cognome': _cognomeController.text.trim(),
+            'username': _usernameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'createdAt': DateTime.now(),
+          });
+
+      // 👤 4️⃣ Aggiorna nome profilo Firebase
+      await credential.user!.updateDisplayName(_usernameController.text.trim());
+
+      // ✉️ 5️⃣ Invia email di verifica
+      await credential.user!.sendEmailVerification();
+
+      // 💾 6️⃣ Salva localmente per uso rapido
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('username', _usernameController.text.trim());
+      await prefs.setString('email', _emailController.text.trim());
+
+      // ✅ 7️⃣ Mostra messaggio e reindirizza
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registrazione completata! Verifica la tua email 📩'),
+          ),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    } on FirebaseAuthException catch (e) {
+      String msg = 'Errore durante la registrazione.';
+      if (e.code == 'weak-password') msg = 'La password è troppo debole.';
+      if (e.code == 'email-already-in-use') msg = 'Email già registrata.';
+      if (e.code == 'invalid-email') msg = 'Email non valida.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Registrazione completata!")),
+        const SnackBar(content: Text('Errore di connessione. Riprova.')),
       );
-      Navigator.pop(context); // Torna al login
+    } finally {
+      setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.of(context).size.height;
-
     return Scaffold(
       backgroundColor: const Color(0xFFe8e9ea),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Header con logo e titolo
-            Padding(
-              padding: EdgeInsets.only(top: height * 0.1, bottom: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Image.asset(
-                    'assets/images/logo_pages.png',
-                    width: 80,
-                    height: 80,
-                    fit: BoxFit.contain,
-                  ),
-                  const SizedBox(width: 15),
-                  const Text(
-                    'Occhio al Borgo',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontFamily: 'Cinzel',
-                      color: Colors.black,
-                    ),
-                  ),
-                ],
+      appBar: AppBar(
+        title: const Text('Registrati', style: TextStyle(fontFamily: 'Cinzel')),
+        backgroundColor: const Color(0xFF91be7e),
+        centerTitle: true,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            children: [
+              TextFormField(
+                controller: _nomeController,
+                decoration: const InputDecoration(labelText: 'Nome'),
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? 'Campo obbligatorio' : null,
               ),
-            ),
-
-            // Campi form
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: [
-                  _buildInputBox(_nomeController, 'Nome'),
-                  _buildInputBox(_cognomeController, 'Cognome'),
-                  _buildInputBox(_usernameController, 'Username'),
-                  _buildInputBox(
-                    _emailController,
-                    'Email',
-                    keyboard: TextInputType.emailAddress,
+              TextFormField(
+                controller: _cognomeController,
+                decoration: const InputDecoration(labelText: 'Cognome'),
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? 'Campo obbligatorio' : null,
+              ),
+              TextFormField(
+                controller: _usernameController,
+                decoration: const InputDecoration(labelText: 'Username *'),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty)
+                    return 'Campo obbligatorio';
+                  if (v.contains(' '))
+                    return 'Lo username non può contenere spazi';
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _emailController,
+                decoration: const InputDecoration(labelText: 'Email *'),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty)
+                    return 'Campo obbligatorio';
+                  if (!v.contains('@') || !v.contains('.'))
+                    return 'Email non valida';
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _passwordController,
+                decoration: const InputDecoration(labelText: 'Password *'),
+                obscureText: true,
+                validator: (v) =>
+                    v == null || v.length < 6 ? 'Minimo 6 caratteri' : null,
+              ),
+              const SizedBox(height: 28),
+              ElevatedButton(
+                onPressed: _loading ? null : _register,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF3a602a),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  _buildPasswordBox(
-                    _passwordController,
-                    'Password',
-                    _showPassword,
-                    () {
-                      setState(() => _showPassword = !_showPassword);
-                    },
-                  ),
-                  _buildPasswordBox(
-                    _confirmController,
-                    'Conferma Password',
-                    _showConfirmPassword,
-                    () {
-                      setState(
-                        () => _showConfirmPassword = !_showConfirmPassword,
-                      );
-                    },
-                  ),
-                  if (_errorMessage.isNotEmpty)
-                    Text(
-                      _errorMessage,
-                      style: const TextStyle(
-                        color: Colors.red,
-                        fontSize: 12,
-                        fontFamily: 'Cormorant',
-                      ),
-                    ),
-                  if (_error.isNotEmpty)
-                    Text(
-                      _error,
-                      style: const TextStyle(
-                        color: Colors.red,
-                        fontSize: 12,
-                        fontFamily: 'Cormorant',
-                      ),
-                    ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: _onRegister,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 30,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    child: const Text(
-                      'Registrati',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontFamily: 'Cinzel',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        'Hai già un account?',
+                ),
+                child: _loading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        'Crea account',
                         style: TextStyle(
-                          fontSize: 14,
-                          fontFamily: 'Cormorant',
-                          color: Colors.black87,
+                          fontFamily: 'Cinzel',
+                          color: Colors.white,
+                          fontSize: 16,
                         ),
                       ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text(
-                          'Accedi',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontFamily: 'Cormorant',
-                            color: Color(0xFF007AFF),
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    ],
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () =>
+                    Navigator.pushReplacementNamed(context, '/login'),
+                child: const Text(
+                  'Hai già un account? Accedi',
+                  style: TextStyle(
+                    fontFamily: 'Cormorant',
+                    fontSize: 15,
+                    color: Colors.black87,
                   ),
-                ],
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputBox(
-    TextEditingController controller,
-    String hint, {
-    TextInputType keyboard = TextInputType.text,
-  }) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboard,
-        style: const TextStyle(
-          fontSize: 16,
-          color: Colors.black,
-          fontFamily: 'Cormorant',
-        ),
-        decoration: InputDecoration(
-          hintText: hint,
-          border: InputBorder.none,
-          hintStyle: const TextStyle(color: Colors.black54),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPasswordBox(
-    TextEditingController controller,
-    String hint,
-    bool showPassword,
-    VoidCallback onToggle,
-  ) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: controller,
-              obscureText: !showPassword,
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.black,
-                fontFamily: 'Cormorant',
-              ),
-              decoration: InputDecoration(
-                hintText: hint,
-                border: InputBorder.none,
-                hintStyle: const TextStyle(color: Colors.black54),
-              ),
-            ),
+            ],
           ),
-          IconButton(
-            icon: Icon(
-              showPassword ? FontAwesomeIcons.eyeSlash : FontAwesomeIcons.eye,
-              color: Colors.black,
-              size: 16,
-            ),
-            onPressed: onToggle,
-          ),
-        ],
+        ),
       ),
     );
   }

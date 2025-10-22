@@ -27,7 +27,6 @@ class CustomBottomNavBar extends StatelessWidget {
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _buildNavItem(Icons.home, 'Home', 0),
           _buildNavItem(Icons.explore, 'Esplora', 1),
@@ -40,12 +39,12 @@ class CustomBottomNavBar extends StatelessWidget {
   }
 
   Widget _buildNavItem(IconData icon, String label, int index) {
-    final bool isActive = index == currentIndex;
+    final isActive = index == currentIndex;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () => onTap(index),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -82,9 +81,7 @@ class CustomBottomNavBar extends StatelessWidget {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(
-                alpha: 0.3,
-              ), // ✅ nuovo metodo non deprecato
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),

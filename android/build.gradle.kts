@@ -1,3 +1,11 @@
+// ✅ Aggiungi questo blocco in cima
+plugins {
+    // Plugin Google Services per Firebase
+    id("com.google.gms.google-services") version "4.3.15" apply false
+
+}
+
+// 🔽 Il resto del tuo file rimane invariato
 allprojects {
     repositories {
         google()

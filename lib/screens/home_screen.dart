@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:image_picker/image_picker.dart' as picker;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-// ⬇️ importa la navbar aggiornata
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:battery_plus/battery_plus.dart';
 import '../widgets/bottom_navbar.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -17,17 +18,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _currentIndex = 0;
-
   String? _username;
   File? _profileImage;
-
   String? _lastBorgoName;
   File? _lastBorgoPhoto;
-  double? _lastLat;
-  double? _lastLng;
   DateTime? _lastDate;
-
   List<Map<String, dynamic>> _unlockedBadges = [];
   List<_EventoItem> _upcomingEvents = [];
 
@@ -36,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    checkPendingBorgo();
     _loadAll();
   }
 
@@ -94,36 +90,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     _lastBorgoName =
         prefs.getString('last_borgo_name') ?? 'Nessun borgo riconosciuto';
-    _lastLat = prefs.getDouble('last_borgo_lat');
-    _lastLng = prefs.getDouble('last_borgo_lng');
     final savedPath = prefs.getString('last_borgo_photo');
     if (savedPath != null && File(savedPath).existsSync()) {
       _lastBorgoPhoto = File(savedPath);
     }
     final dateStr = prefs.getString('last_borgo_date');
     if (dateStr != null) _lastDate = DateTime.tryParse(dateStr);
-  }
-
-  Future<void> _takeNewPhotoFallback() async {
-    final picker.XFile? photo = await _picker.pickImage(
-      source: picker.ImageSource.camera,
-    );
-    if (photo != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('last_borgo_photo', photo.path);
-      await prefs.setString('last_borgo_name', 'Borgo sconosciuto');
-      await prefs.setDouble('last_borgo_lat', 0);
-      await prefs.setDouble('last_borgo_lng', 0);
-      await prefs.setString(
-        'last_borgo_date',
-        DateTime.now().toIso8601String(),
-      );
-      setState(() {
-        _lastBorgoPhoto = File(photo.path);
-        _lastBorgoName = 'Borgo sconosciuto';
-        _lastDate = DateTime.now();
-      });
-    }
   }
 
   Future<void> _loadBadges() async {
@@ -159,6 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }
       }
+
       items.sort((a, b) => a.endDate.compareTo(b.endDate));
       _upcomingEvents = items.take(3).toList();
     } catch (_) {
@@ -218,7 +191,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onNavTap(int index) {
-    setState(() => _currentIndex = index);
     switch (index) {
       case 0:
         break;
@@ -250,9 +222,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         backgroundColor: const Color(0xFF91be7e),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            tooltip: 'Impostazioni',
+            onPressed: () => Navigator.pushNamed(context, '/settings'),
+          ),
+        ],
       ),
       bottomNavigationBar: CustomBottomNavBar(
-        currentIndex: _currentIndex,
+        currentIndex: 0,
         onTap: _onNavTap,
       ),
       body: SafeArea(
@@ -548,4 +527,50 @@ class _EventoItem {
     required this.url,
     required this.endDate,
   });
+}
+
+// ✅ Funzione riconoscimento borgo differito
+Future<void> checkPendingBorgo() async {
+  final prefs = await SharedPreferences.getInstance();
+  final hasPending = prefs.getBool('pending_borgo') ?? false;
+  if (!hasPending) return;
+
+  final path = prefs.getString('pending_borgo_path');
+  final lat = prefs.getDouble('last_borgo_lat');
+  final lng = prefs.getDouble('last_borgo_lng');
+  if (lat == null || lng == null) return;
+
+  final connectivity = await Connectivity().checkConnectivity();
+  final battery = Battery();
+  final level = await battery.batteryLevel;
+  if (connectivity == ConnectivityResult.none || level <= 10) {
+    print('⚠️ Offline o batteria bassa: riconoscimento rinviato');
+    return;
+  }
+
+  try {
+    final jsonData = await rootBundle.loadString('assets/data/borghi_min.json');
+    final List data = json.decode(jsonData);
+    double minDistance = double.infinity;
+    String? nearestName;
+
+    for (final borgo in data) {
+      final dist = sqrt(
+        pow(lat - borgo['lat'], 2) + pow(lng - borgo['lng'], 2),
+      );
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearestName = borgo['name'];
+      }
+    }
+
+    await prefs.setString(
+      'last_borgo_name',
+      nearestName ?? 'Borgo sconosciuto',
+    );
+    await prefs.setBool('pending_borgo', false);
+    print('✅ Borgo riconosciuto in differita: $nearestName');
+  } catch (e) {
+    print('❌ Errore riconoscimento differito: $e');
+  }
 }

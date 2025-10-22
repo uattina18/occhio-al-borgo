@@ -15,9 +15,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
   List<dynamic> _filteredBorghi = [];
   String _query = '';
   String _selectedRegion = 'all';
-  int _currentIndex = 1;
+  double _lastScrollOffset = 0;
 
-  // 🔁 controller per mantenere lo scroll
   final ScrollController _scrollController = ScrollController();
 
   final List<Map<String, String>> _regioni = [
@@ -64,17 +63,33 @@ class _ExploreScreenState extends State<ExploreScreen> {
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients && _lastScrollOffset > 0) {
+        _scrollController.jumpTo(_lastScrollOffset);
+      }
+    });
+  }
+
   void _onNavTap(int index) {
-    if (index == 0) {
-      Navigator.pushReplacementNamed(context, '/home');
-    } else if (index == 1) {
-      // già su esplora
-    } else if (index == 2) {
-      Navigator.pushNamed(context, '/scatta');
-    } else if (index == 3) {
-      Navigator.pushNamed(context, '/notifiche');
-    } else if (index == 4) {
-      Navigator.pushNamed(context, '/profilo');
+    switch (index) {
+      case 0:
+        Navigator.pushReplacementNamed(context, '/home');
+        break;
+      case 1:
+        // Sei già su Explore
+        break;
+      case 2:
+        Navigator.pushNamed(context, '/scatta');
+        break;
+      case 3:
+        Navigator.pushReplacementNamed(context, '/notifiche');
+        break;
+      case 4:
+        Navigator.pushReplacementNamed(context, '/profilo');
+        break;
     }
   }
 
@@ -89,9 +104,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
         backgroundColor: const Color(0xFF91be7e),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            tooltip: 'Impostazioni',
+            onPressed: () => Navigator.pushNamed(context, '/settings'),
+          ),
+        ],
       ),
       bottomNavigationBar: CustomBottomNavBar(
-        currentIndex: _currentIndex,
+        currentIndex: 1,
         onTap: _onNavTap,
       ),
       body: SafeArea(
@@ -147,7 +169,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 📋 Lista borghi con scroll salvato
+              // 📋 Lista borghi
               Expanded(
                 child: _filteredBorghi.isEmpty
                     ? const Center(
@@ -162,7 +184,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       )
                     : NotificationListener<ScrollEndNotification>(
                         onNotification: (_) {
-                          // salva posizione corrente dello scroll
                           _lastScrollOffset = _scrollController.offset;
                           return false;
                         },
@@ -207,13 +228,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                     '/borgo_detail',
                                     arguments: b,
                                   );
-                                  // 🔙 ripristina scroll
                                   if (mounted) {
                                     Future.delayed(
                                       const Duration(milliseconds: 150),
-                                      () {
-                                        _scrollController.jumpTo(currentOffset);
-                                      },
+                                      () => _scrollController.jumpTo(
+                                        currentOffset,
+                                      ),
                                     );
                                   }
                                 },
@@ -228,18 +248,5 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
       ),
     );
-  }
-
-  // 🔁 per mantenere la posizione dopo il pop
-  double _lastScrollOffset = 0;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients && _lastScrollOffset > 0) {
-        _scrollController.jumpTo(_lastScrollOffset);
-      }
-    });
   }
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "338710106923",
+    "project_id": "occhio-al-borgo",
+    "storage_bucket": "occhio-al-borgo.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:338710106923:android:c65aa2a58870ef15e06b6e",
+        "android_client_info": {
+          "package_name": "com.example.occhio_al_borgo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCQcGjNG28LotP9WDyeKO2YT_TK413D8Jw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
