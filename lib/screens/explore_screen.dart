@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import '../widgets/bottom_navbar.dart';
+import 'borghi_detail_screen.dart';
+import '../theme/app_theme.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -79,7 +81,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
         Navigator.pushReplacementNamed(context, '/home');
         break;
       case 1:
-        // Sei già su Explore
         break;
       case 2:
         Navigator.pushNamed(context, '/scatta');
@@ -95,18 +96,27 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color topBarColor = isDark
+        ? const Color(0xFF3a602a)
+        : const Color(0xFF91be7e);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFe8e9ea),
+      backgroundColor: AppColors.background(context),
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Esplora Borghi',
-          style: TextStyle(fontFamily: 'Cinzel'),
+          style: TextStyle(
+            fontFamily: 'Cinzel',
+            color: AppColors.foreground(context),
+            fontWeight: FontWeight.bold,
+          ),
         ),
-        backgroundColor: const Color(0xFF91be7e),
+        backgroundColor: topBarColor,
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
+            icon: Icon(Icons.settings, color: AppColors.foreground(context)),
             tooltip: 'Impostazioni',
             onPressed: () => Navigator.pushNamed(context, '/settings'),
           ),
@@ -115,135 +125,159 @@ class _ExploreScreenState extends State<ExploreScreen> {
       bottomNavigationBar: CustomBottomNavBar(
         currentIndex: 1,
         onTap: _onNavTap,
+        backgroundColor: topBarColor,
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // 🔍 Campo di ricerca
-              TextField(
-                decoration: InputDecoration(
-                  hintText: 'Cerca un borgo...',
-                  hintStyle: const TextStyle(
-                    fontFamily: 'Cormorant',
-                    color: Colors.black54,
-                  ),
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onChanged: _filterBorghi,
-              ),
-              const SizedBox(height: 12),
-
-              // 🌍 Filtri regioni
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: _regioni.map((reg) {
-                    final selected = _selectedRegion == reg['id'];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: ChoiceChip(
-                        label: Text(
-                          reg['label']!,
-                          style: TextStyle(
-                            fontFamily: 'Cormorant',
-                            color: selected ? Colors.white : Colors.black87,
-                          ),
-                        ),
-                        selected: selected,
-                        selectedColor: const Color(0xFF3a602a),
-                        backgroundColor: const Color(0xFFD7D7D9),
-                        onSelected: (_) => _changeRegion(reg['id']!),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // 🔍 Campo di ricerca
+                  TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Cerca un borgo...',
+                      hintStyle: TextStyle(
+                        fontFamily: 'Cormorant',
+                        color: AppColors.subtext(context),
                       ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 16),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: AppColors.subtext(context),
+                      ),
+                      filled: true,
+                      fillColor: AppColors.card(context),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onChanged: _filterBorghi,
+                  ),
+                  const SizedBox(height: 12),
 
-              // 📋 Lista borghi
-              Expanded(
-                child: _filteredBorghi.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'Nessun borgo trovato.',
-                          style: TextStyle(
-                            fontFamily: 'Cormorant',
-                            fontSize: 16,
-                            color: Colors.black54,
-                          ),
-                        ),
-                      )
-                    : NotificationListener<ScrollEndNotification>(
-                        onNotification: (_) {
-                          _lastScrollOffset = _scrollController.offset;
-                          return false;
-                        },
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          itemCount: _filteredBorghi.length,
-                          itemBuilder: (context, index) {
-                            final b = _filteredBorghi[index];
-                            return Card(
-                              margin: const EdgeInsets.symmetric(vertical: 6),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
+                  // 🌍 Filtri regioni
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: _regioni.map((reg) {
+                        final selected = _selectedRegion == reg['id'];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: ChoiceChip(
+                            label: Text(
+                              reg['label']!,
+                              style: TextStyle(
+                                fontFamily: 'Cormorant',
+                                color: AppColors.foreground(context),
                               ),
-                              child: ListTile(
-                                title: Text(
-                                  b['name'],
-                                  style: const TextStyle(
-                                    fontFamily: 'Cinzel',
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+                            ),
+                            selected: selected,
+                            selectedColor: AppColors.primary(context),
+                            backgroundColor: AppColors.card(context),
+                            onSelected: (_) => _changeRegion(reg['id']!),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 📋 Lista borghi
+                  Expanded(
+                    child: _filteredBorghi.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Nessun borgo trovato.',
+                              style: TextStyle(
+                                fontFamily: 'Cormorant',
+                                fontSize: 16,
+                                color: AppColors.subtext(context),
+                              ),
+                            ),
+                          )
+                        : NotificationListener<ScrollEndNotification>(
+                            onNotification: (_) {
+                              _lastScrollOffset = _scrollController.offset;
+                              return false;
+                            },
+                            child: ListView.builder(
+                              controller: _scrollController,
+                              itemCount: _filteredBorghi.length,
+                              itemBuilder: (context, index) {
+                                final b = _filteredBorghi[index];
+                                return Card(
+                                  color: AppColors.card(context),
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 6,
                                   ),
-                                ),
-                                subtitle: Text(
-                                  (b['regionId'] ?? '')
-                                      .toString()
-                                      .toUpperCase(),
-                                  style: const TextStyle(
-                                    fontFamily: 'Cormorant',
-                                    fontSize: 14,
-                                    color: Colors.black54,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                ),
-                                trailing: const Icon(
-                                  Icons.arrow_forward_ios,
-                                  size: 16,
-                                ),
-                                onTap: () async {
-                                  final currentOffset =
-                                      _scrollController.offset;
-                                  await Navigator.pushNamed(
-                                    context,
-                                    '/borgo_detail',
-                                    arguments: b,
-                                  );
-                                  if (mounted) {
-                                    Future.delayed(
-                                      const Duration(milliseconds: 150),
-                                      () => _scrollController.jumpTo(
-                                        currentOffset,
+                                  child: ListTile(
+                                    title: Text(
+                                      b['name'],
+                                      style: TextStyle(
+                                        fontFamily: 'Cinzel',
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: AppColors.foreground(context),
                                       ),
-                                    );
-                                  }
-                                },
-                              ),
-                            );
-                          },
-                        ),
-                      ),
+                                    ),
+                                    subtitle: Text(
+                                      (b['regionId'] ?? '')
+                                          .toString()
+                                          .toUpperCase(),
+                                      style: TextStyle(
+                                        fontFamily: 'Cormorant',
+                                        fontSize: 14,
+                                        color: AppColors.subtext(context),
+                                      ),
+                                    ),
+                                    trailing: Icon(
+                                      Icons.arrow_forward_ios,
+                                      size: 16,
+                                      color: AppColors.subtext(context),
+                                    ),
+                                    onTap: () async {
+                                      final currentOffset =
+                                          _scrollController.offset;
+                                      await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              BorgoDetailScreen(
+                                                id: b['id'] ?? '',
+                                                name:
+                                                    b['name'] ??
+                                                    'Borgo sconosciuto',
+                                                region: b['regionId'] ?? '',
+                                                province: b['provinceCode'],
+                                              ),
+                                        ),
+                                      );
+                                      if (mounted) {
+                                        Future.delayed(
+                                          const Duration(milliseconds: 150),
+                                          () => _scrollController.jumpTo(
+                                            currentOffset,
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

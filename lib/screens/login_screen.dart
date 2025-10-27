@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:occhio_al_borgo/theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -93,13 +94,10 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      final didAuthenticate = await _localAuth.authenticate(
+      final localAuth = LocalAuthentication();
+      final didAuthenticate = await localAuth.authenticate(
         localizedReason: 'Autenticati per accedere',
-        options: const AuthenticationOptions(
-          biometricOnly: true,
-          stickyAuth: true,
-          useErrorDialogs: true,
-        ),
+        // NIENTE options qui
       );
 
       if (didAuthenticate) {
@@ -134,19 +132,19 @@ class _LoginScreenState extends State<LoginScreen> {
         fit: StackFit.expand,
         children: [
           Image.asset('assets/images/login_bg.png', fit: BoxFit.cover),
-          Container(color: Colors.black.withOpacity(0.35)),
+          Container(color: AppColors.foreground(context).withOpacity(0.35)),
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
+                  Text(
                     'OCCHIO AL BORGO',
                     style: TextStyle(
                       fontFamily: 'Cinzel',
                       fontSize: 22,
-                      color: Colors.white,
+                      color: AppColors.foreground(context),
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
                     ),
@@ -166,13 +164,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   // Email
                   TextField(
                     controller: _emailController,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: AppColors.foreground(context)),
                     decoration: InputDecoration(
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.75),
+                      fillColor: AppColors.card(context).withValues(alpha: 0.9),
+
                       hintText: 'Email',
-                      hintStyle: const TextStyle(
-                        color: Colors.black54,
+                      hintStyle: TextStyle(
+                        color: AppColors.subtext(context),
                         fontFamily: 'Cormorant',
                       ),
                       border: OutlineInputBorder(
@@ -187,13 +186,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextField(
                     controller: _passwordController,
                     obscureText: _obscurePassword,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: AppColors.foreground(context)),
                     decoration: InputDecoration(
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.75),
+                      fillColor: AppColors.card(context).withValues(alpha: 0.9),
+
                       hintText: 'Password',
-                      hintStyle: const TextStyle(
-                        color: Colors.black54,
+                      hintStyle: TextStyle(
+                        color: AppColors.subtext(context),
                         fontFamily: 'Cormorant',
                       ),
                       suffixIcon: IconButton(
@@ -201,7 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           _obscurePassword
                               ? Icons.visibility_off
                               : Icons.visibility,
-                          color: Colors.black54,
+                          color: AppColors.subtext(context),
                         ),
                         onPressed: () => setState(
                           () => _obscurePassword = !_obscurePassword,
@@ -225,10 +225,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             setState(() => _rememberMe = v ?? false),
                         activeColor: const Color(0xFF91be7e),
                       ),
-                      const Text(
+                      Text(
                         'Rimani connesso',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: AppColors.foreground(context),
                           fontFamily: 'Cormorant',
                           fontSize: 16,
                         ),
@@ -239,7 +239,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Pulsanti
                   _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
+                      ? CircularProgressIndicator(
+                          color: AppColors.foreground(context),
+                        )
                       : Column(
                           children: [
                             ElevatedButton(
@@ -254,10 +256,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'ACCEDI',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: AppColors.foreground(context),
                                   fontFamily: 'Cinzel',
                                   fontSize: 16,
                                 ),
@@ -266,20 +268,22 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 10),
                             OutlinedButton.icon(
                               onPressed: _loginWithBiometric,
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.fingerprint,
-                                color: Colors.white,
+                                color: AppColors.foreground(context),
                               ),
-                              label: const Text(
+                              label: Text(
                                 'Accedi con impronta',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: AppColors.foreground(context),
                                   fontFamily: 'Cinzel',
                                   fontSize: 16,
                                 ),
                               ),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Colors.white),
+                                side: BorderSide(
+                                  color: AppColors.foreground(context),
+                                ),
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 12,
                                   horizontal: 40,
@@ -293,10 +297,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextButton(
                     onPressed: () =>
                         Navigator.pushReplacementNamed(context, '/register'),
-                    child: const Text(
+                    child: Text(
                       'Non hai un account? Registrati',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.foreground(context),
                         fontFamily: 'Cormorant',
                         fontSize: 16,
                         decoration: TextDecoration.underline,

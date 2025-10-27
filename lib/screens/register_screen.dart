@@ -1,8 +1,11 @@
-// lib/screens/register_screen.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:occhio_al_borgo/theme/app_theme.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -12,27 +15,37 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nomeController = TextEditingController();
   final _cognomeController = TextEditingController();
   final _usernameController = TextEditingController();
+  final _picker = ImagePicker();
 
+  File? _avatarFile;
   bool _loading = false;
-  final _formKey = GlobalKey<FormState>();
+
+  Future<void> _pickAvatar(ImageSource source) async {
+    final picked = await _picker.pickImage(source: source, imageQuality: 85);
+    if (picked != null) {
+      setState(() => _avatarFile = File(picked.path));
+    }
+  }
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _loading = true);
     try {
-      // 🔍 1️⃣ Controllo username duplicato su Firestore
-      final check = await FirebaseFirestore.instance
-          .collection('utenti')
+      final firestore = FirebaseFirestore.instance;
+
+      // 1️⃣ Controlla se username esiste già
+      final existing = await firestore
+          .collection('users')
           .where('username', isEqualTo: _usernameController.text.trim())
           .get();
-
-      if (check.docs.isNotEmpty) {
+      if (existing.docs.isNotEmpty) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Username già in uso.')));
@@ -40,37 +53,51 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return;
       }
 
-      // 🔐 2️⃣ Crea utente su Firebase Authentication
+      // 2️⃣ Crea utente in Firebase Auth
       final credential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
             email: _emailController.text.trim(),
             password: _passwordController.text.trim(),
           );
 
-      // 🧠 3️⃣ Salva dati aggiuntivi su Firestore
-      await FirebaseFirestore.instance
-          .collection('utenti')
-          .doc(credential.user!.uid)
-          .set({
-            'nome': _nomeController.text.trim(),
-            'cognome': _cognomeController.text.trim(),
-            'username': _usernameController.text.trim(),
-            'email': _emailController.text.trim(),
-            'createdAt': DateTime.now(),
-          });
+      final uid = credential.user!.uid;
+      String? photoUrl;
 
-      // 👤 4️⃣ Aggiorna nome profilo Firebase
+      // 3️⃣ Se ha scelto un avatar, caricalo su Firebase Storage
+      if (_avatarFile != null) {
+        final ref = FirebaseStorage.instance.ref().child('avatars/$uid.jpg');
+        await ref.putFile(_avatarFile!);
+        photoUrl = await ref.getDownloadURL();
+      }
+
+      // 4️⃣ Salva i dati su Firestore
+      await firestore.collection('users').doc(uid).set({
+        'uid': uid,
+        'nome': _nomeController.text.trim(),
+        'cognome': _cognomeController.text.trim(),
+        'username': _usernameController.text.trim(),
+        'email': _emailController.text.trim(),
+        'photoUrl': photoUrl,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // 5️⃣ Aggiorna il profilo Firebase
       await credential.user!.updateDisplayName(_usernameController.text.trim());
+      if (photoUrl != null) {
+        await credential.user!.updatePhotoURL(photoUrl);
+      }
 
-      // ✉️ 5️⃣ Invia email di verifica
+      // 6️⃣ Invia email di verifica
       await credential.user!.sendEmailVerification();
 
-      // 💾 6️⃣ Salva localmente per uso rapido
+      // 7️⃣ Salva dati base localmente
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('uid', uid);
       await prefs.setString('username', _usernameController.text.trim());
       await prefs.setString('email', _emailController.text.trim());
+      if (photoUrl != null) await prefs.setString('photoUrl', photoUrl);
 
-      // ✅ 7️⃣ Mostra messaggio e reindirizza
+      // 8️⃣ Conferma e redirect
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -81,26 +108,80 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     } on FirebaseAuthException catch (e) {
       String msg = 'Errore durante la registrazione.';
-      if (e.code == 'weak-password') msg = 'La password è troppo debole.';
-      if (e.code == 'email-already-in-use') msg = 'Email già registrata.';
-      if (e.code == 'invalid-email') msg = 'Email non valida.';
+      switch (e.code) {
+        case 'weak-password':
+          msg = 'La password è troppo debole.';
+          break;
+        case 'email-already-in-use':
+          msg = 'Questa email è già registrata.';
+          break;
+        case 'invalid-email':
+          msg = 'Email non valida.';
+          break;
+        default:
+          msg = e.message ?? msg;
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Errore di connessione. Riprova.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Errore imprevisto: $e')));
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _showAvatarOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.foreground(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo),
+              title: const Text('Scegli dalla galleria'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAvatar(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Scatta una foto'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAvatar(ImageSource.camera);
+              },
+            ),
+            if (_avatarFile != null)
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.redAccent),
+                title: const Text(
+                  'Rimuovi foto',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() => _avatarFile = null);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFe8e9ea),
+      backgroundColor: AppColors.background(context),
       appBar: AppBar(
         title: const Text('Registrati', style: TextStyle(fontFamily: 'Cinzel')),
-        backgroundColor: const Color(0xFF91be7e),
+        backgroundColor: AppColors.primary(context),
         centerTitle: true,
       ),
       body: Padding(
@@ -109,6 +190,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
           key: _formKey,
           child: ListView(
             children: [
+              // 👤 Anteprima immagine profilo
+              GestureDetector(
+                onTap: _showAvatarOptions,
+                child: CircleAvatar(
+                  radius: 50,
+                  backgroundColor: AppColors.primary(context),
+                  backgroundImage: _avatarFile != null
+                      ? FileImage(_avatarFile!)
+                      : null,
+                  child: _avatarFile == null
+                      ? Icon(
+                          Icons.person,
+                          size: 50,
+                          color: AppColors.foreground(context),
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _nomeController,
                 decoration: const InputDecoration(labelText: 'Nome'),
@@ -125,21 +225,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 controller: _usernameController,
                 decoration: const InputDecoration(labelText: 'Username *'),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty)
+                  if (v == null || v.trim().isEmpty) {
                     return 'Campo obbligatorio';
-                  if (v.contains(' '))
+                  }
+                  if (v.contains(' ')) {
                     return 'Lo username non può contenere spazi';
+                  }
                   return null;
                 },
               ),
               TextFormField(
                 controller: _emailController,
                 decoration: const InputDecoration(labelText: 'Email *'),
+                keyboardType: TextInputType.emailAddress,
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty)
+                  if (v == null || v.trim().isEmpty) {
                     return 'Campo obbligatorio';
-                  if (!v.contains('@') || !v.contains('.'))
+                  }
+                  if (!v.contains('@') || !v.contains('.')) {
                     return 'Email non valida';
+                  }
                   return null;
                 },
               ),
@@ -161,26 +266,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
                 child: _loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
+                    ? CircularProgressIndicator(
+                        color: AppColors.foreground(context),
+                      )
+                    : Text(
                         'Crea account',
                         style: TextStyle(
                           fontFamily: 'Cinzel',
-                          color: Colors.white,
+                          color: AppColors.foreground(context),
                           fontSize: 16,
                         ),
                       ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               TextButton(
                 onPressed: () =>
                     Navigator.pushReplacementNamed(context, '/login'),
-                child: const Text(
+                child: Text(
                   'Hai già un account? Accedi',
                   style: TextStyle(
                     fontFamily: 'Cormorant',
                     fontSize: 15,
-                    color: Colors.black87,
+                    color: AppColors.foreground(context),
                   ),
                 ),
               ),

@@ -10,6 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:battery_plus/battery_plus.dart';
+import 'package:occhio_al_borgo/theme/app_theme.dart';
 
 class ScattaScreen extends StatefulWidget {
   const ScattaScreen({super.key});
@@ -21,7 +24,7 @@ class ScattaScreen extends StatefulWidget {
 class _ScattaScreenState extends State<ScattaScreen> {
   CameraController? _controller;
   bool _isReady = false;
-  final bool _isCapturing = false;
+  bool _isCapturing = false;
   double? _latitude;
   double? _longitude;
   double? _azimuth;
@@ -65,12 +68,11 @@ class _ScattaScreenState extends State<ScattaScreen> {
   }
 
   void _listenCompass() {
-    _compassSubscription = magnetometerEvents.listen((MagnetometerEvent event) {
-      if (!mounted) return;
-      // Calcola azimuth approssimato
-      final value = event.x;
+    _compassSubscription = magnetometerEvents.listen((event) {
+      // Calcola direzione magnetica (azimuth)
+      final double heading = atan2(event.y, event.x) * (180 / pi);
       setState(() {
-        _azimuth = value;
+        _azimuth = (heading + 360) % 360; // Normalizza tra 0 e 360°
       });
     });
   }
@@ -113,46 +115,55 @@ class _ScattaScreenState extends State<ScattaScreen> {
     }
   }
 
-  Future<void> checkPendingBorgo() async {
-    final prefs = await SharedPreferences.getInstance();
-    final hasPending = prefs.getBool('pending_borgo') ?? false;
+  Future<void> _capture() async {
+    if (_controller == null || _isCapturing) return;
+    setState(() => _isCapturing = true);
 
-    if (!hasPending) return;
+    try {
+      final image = await _controller!.takePicture();
 
-    final path = prefs.getString('pending_borgo_path');
-    final lat = prefs.getDouble('last_borgo_lat');
-    final lng = prefs.getDouble('last_borgo_lng');
-
-    final connectivity = await Connectivity().checkConnectivity();
-    final battery = Battery();
-    final level = await battery.batteryLevel;
-
-    if (connectivity != ConnectivityResult.none &&
-        level > 10 &&
-        lat != null &&
-        lng != null) {
-      final jsonData = await rootBundle.loadString(
-        'assets/data/borghi_min.json',
+      final dir = await getApplicationDocumentsDirectory();
+      final path = p.join(
+        dir.path,
+        'borgo_${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
-      final List data = json.decode(jsonData);
-      double minDistance = double.infinity;
-      String? nearestName;
+      await image.saveTo(path);
 
-      for (final borgo in data) {
-        final dist = (pow(lat - borgo['lat'], 2) + pow(lng - borgo['lng'], 2))
-            .toDouble();
-        if (dist < minDistance) {
-          minDistance = dist;
-          nearestName = borgo['name'];
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_borgo_photo', path);
+      await prefs.setDouble('last_borgo_lat', _latitude ?? 0);
+      await prefs.setDouble('last_borgo_lng', _longitude ?? 0);
+      await prefs.setDouble('last_borgo_azimuth', _azimuth ?? 0);
+      await prefs.setString(
+        'last_borgo_date',
+        DateTime.now().toIso8601String(),
+      );
+
+      final connectivity = await Connectivity().checkConnectivity();
+      final battery = Battery();
+      final level = await battery.batteryLevel;
+
+      if (connectivity == ConnectivityResult.none || level <= 10) {
+        await prefs.setBool('pending_borgo', true);
+        await prefs.setString('pending_borgo_path', path);
+      } else {
+        String? detectedName;
+        if (_latitude != null && _longitude != null) {
+          detectedName = await _identifyBorgo(_latitude!, _longitude!);
         }
+        await prefs.setString(
+          'last_borgo_name',
+          detectedName ?? 'Borgo sconosciuto',
+        );
+        await prefs.setBool('pending_borgo', false);
       }
 
-      await prefs.setString(
-        'last_borgo_name',
-        nearestName ?? 'Borgo sconosciuto',
-      );
-      await prefs.setBool('pending_borgo', false);
-      print('✅ Borgo riconosciuto in differita: $nearestName');
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint('Errore durante lo scatto: $e');
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
     }
   }
 
@@ -167,27 +178,35 @@ class _ScattaScreenState extends State<ScattaScreen> {
   @override
   Widget build(BuildContext context) {
     if (!_isReady) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      return Scaffold(
+        backgroundColor: AppColors.background(context),
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.accent(context)),
+        ),
       );
     }
 
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color panelColor = Colors.black.withValues(alpha: 0.5);
+    final Color captureColor = isDark
+        ? const Color(0xFF3a602a)
+        : AppColors.accent(context);
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.background(context),
       body: Stack(
         children: [
           CameraPreview(_controller!),
 
-          // 📍 Coordinate e bussola visuali
+          // 📍 Coordinate GPS
           Positioned(
             bottom: 120,
             left: 20,
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
               decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(6),
+                color: panelColor,
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 _latitude != null && _longitude != null
@@ -202,24 +221,53 @@ class _ScattaScreenState extends State<ScattaScreen> {
             ),
           ),
 
+          // 🧭 Bussola sincronizzata
           Positioned(
-            bottom: 120,
+            bottom: 100,
             right: 20,
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(6),
+                color: panelColor,
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(
-                _azimuth != null
-                    ? 'Bussola: ${_azimuth!.toStringAsFixed(1)}°'
-                    : 'Bussola...',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontFamily: 'Cormorant',
-                ),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: Transform.rotate(
+                      angle: -(_azimuth ?? 0) * (pi / 180),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            width: 2,
+                          ),
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.navigation,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _azimuth != null
+                        ? '${_azimuth!.toStringAsFixed(1)}°'
+                        : 'Bussola...',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontFamily: 'Cormorant',
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -237,7 +285,15 @@ class _ScattaScreenState extends State<ScattaScreen> {
                   height: 80,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 5),
+                    color: captureColor.withValues(alpha: 0.9),
+                    border: Border.all(color: Colors.white, width: 4),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black54,
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
                   ),
                 ),
               ),

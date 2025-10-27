@@ -11,28 +11,39 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # 🔥 Firebase
+  firebase_core: ^4.2.0
+  firebase_auth: ^6.1.1
+  cloud_firestore: ^6.0.3
+  firebase_storage: ^13.0.3
+
+  # 📂 Gestione file locali
+  path_provider: ^2.1.4
+
   # 🔐 Autenticazione e preferenze
-  local_auth: ^2.3.0
+  local_auth: ^3.0.0
   shared_preferences: ^2.3.2
 
   # 📷 Fotocamera e sensori
   camera: ^0.11.0+1
-  geolocator: ^13.0.1
-  sensors_plus: ^6.0.1
+  geolocator: ^14.0.2
+  sensors_plus: ^7.0.0
+  image_picker: ^1.1.2
 
   # ⚡️ Batteria e connessione
-  battery_plus: ^5.0.2
-  connectivity_plus: ^6.0.3
+  battery_plus: ^7.0.0
+  connectivity_plus: ^7.0.0
 
-  # 🖼️ Interfaccia e immagini
-  cupertino_icons: ^1.0.8
-  image_picker: ^1.1.2
+  # 🌍 URL esterni
   url_launcher: ^6.3.0
+
+  # 🖼️ Interfaccia e icone
+  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
 
 flutter:
@@ -44,6 +55,7 @@ flutter:
     - assets/images/borgo_placeholder.png
     - assets/data/eventi_liguria.json
     - assets/data/borghi_min.json
+    - assets/data/badges.json
 
   fonts:
     - family: Cinzel

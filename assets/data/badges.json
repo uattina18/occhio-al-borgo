@@ -1,6 +1,17 @@
 {
   "badges": [
     {
+      "id": "fotografa-locale",
+      "title": "Fotografa locale",
+      "description": "Hai scattato la tua prima foto in un borgo",
+      "icon": "camera",
+      "scope": "global",
+      "type": "threshold",
+      "metric": "fotoInBorghi",
+      "threshold": 1
+    },
+
+    {
       "id": "borgo-lover",
       "title": "Borgo Lover",
       "description": "Primo borgo visitato",

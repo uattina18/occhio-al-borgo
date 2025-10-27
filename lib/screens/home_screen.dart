@@ -1,14 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:image_picker/image_picker.dart' as picker;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:battery_plus/battery_plus.dart';
 import '../widgets/bottom_navbar.dart';
+import 'package:occhio_al_borgo/theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,175 +17,146 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String? _username;
-  File? _profileImage;
+  File? _avatarFile;
   String? _lastBorgoName;
+  String? _lastBorgoDate;
   File? _lastBorgoPhoto;
-  DateTime? _lastDate;
-  List<Map<String, dynamic>> _unlockedBadges = [];
-  List<_EventoItem> _upcomingEvents = [];
+  List<Map<String, dynamic>> _upcomingEvents = [];
+  List<String> _unlockedBadges = [];
 
-  final picker.ImagePicker _picker = picker.ImagePicker();
+  final picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    checkPendingBorgo();
-    _loadAll();
+    _loadAllData();
   }
 
-  Future<void> _loadAll() async {
-    await Future.wait([
-      _loadUserAndProfile(),
-      _loadLastBorgo(),
-      _loadBadges(),
-      _loadEventsFromAsset(),
-    ]);
-    if (mounted) setState(() {});
+  Future<void> _loadAllData() async {
+    await _loadUserData();
+    await _loadLastBorgo();
+    await _loadBadges();
+    await _loadEvents();
   }
 
-  Future<void> _loadUserAndProfile() async {
+  Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
-    _username = prefs.getString('username') ?? 'utente';
-    final profilePath = prefs.getString('profile_image');
-    if (profilePath != null && File(profilePath).existsSync()) {
-      _profileImage = File(profilePath);
-    }
-  }
-
-  Future<void> _changeProfileImage() async {
-    final source = await showModalBottomSheet<picker.ImageSource>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Scatta foto'),
-              onTap: () => Navigator.pop(context, picker.ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo),
-              title: const Text('Scegli dalla galleria'),
-              onTap: () => Navigator.pop(context, picker.ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (source != null) {
-      final picker.XFile? image = await _picker.pickImage(source: source);
-      if (image != null) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('profile_image', image.path);
-        setState(() => _profileImage = File(image.path));
+    setState(() {
+      _username = prefs.getString('username') ?? 'Utente';
+      final avatarPath = prefs.getString('profile_avatar');
+      if (avatarPath != null && File(avatarPath).existsSync()) {
+        _avatarFile = File(avatarPath);
       }
-    }
+    });
   }
 
   Future<void> _loadLastBorgo() async {
     final prefs = await SharedPreferences.getInstance();
-    _lastBorgoName =
-        prefs.getString('last_borgo_name') ?? 'Nessun borgo riconosciuto';
-    final savedPath = prefs.getString('last_borgo_photo');
-    if (savedPath != null && File(savedPath).existsSync()) {
-      _lastBorgoPhoto = File(savedPath);
-    }
-    final dateStr = prefs.getString('last_borgo_date');
-    if (dateStr != null) _lastDate = DateTime.tryParse(dateStr);
+    setState(() {
+      _lastBorgoName =
+          prefs.getString('last_borgo_name') ?? 'Nessun borgo riconosciuto';
+      _lastBorgoDate = prefs.getString('last_borgo_date');
+      final photoPath = prefs.getString('last_borgo_photo');
+      if (photoPath != null && File(photoPath).existsSync()) {
+        _lastBorgoPhoto = File(photoPath);
+      }
+    });
   }
 
   Future<void> _loadBadges() async {
     final prefs = await SharedPreferences.getInstance();
-    final badgesJson = prefs.getStringList('unlocked_badges');
-    if (badgesJson != null && badgesJson.isNotEmpty) {
-      _unlockedBadges = badgesJson
-          .map((name) => {'title': name, 'icon': Icons.star})
-          .toList();
-    }
+    setState(() {
+      _unlockedBadges = prefs.getStringList('unlocked_badges') ?? [];
+    });
   }
 
-  Future<void> _loadEventsFromAsset() async {
+  // 🔹 CARICAMENTO EVENTI
+  Future<void> _loadEvents() async {
     try {
       final raw = await rootBundle.loadString(
         'assets/data/eventi_liguria.json',
       );
-      final List<dynamic> data = json.decode(raw);
+      final data = json.decode(raw) as List;
       final today = DateTime.now();
-      final items = <_EventoItem>[];
 
-      for (final ev in data) {
-        final title = (ev['data-page-selector'] ?? ev['data2'] ?? 'Evento')
-            .toString();
-        final img = (ev['image-0-src'] ?? ev['image-src'] ?? '').toString();
-        final url =
-            (ev['data-page-selector-href'] ?? ev['web-scraper-start-url'] ?? '')
-                .toString();
-        final end = _getEndDateFromEvent(ev);
-        if (end != null && !end.isBefore(today)) {
-          items.add(
-            _EventoItem(title: title, img: img, url: url, endDate: end),
-          );
-        }
+      final events = data
+          .map<Map<String, dynamic>>((ev) {
+            return {
+              'title': ev['data-page-selector'] ?? 'Evento',
+              'date': ev['event_dates-0'] ?? ev['data'] ?? '',
+              'img': ev['image-0-src'] ?? ev['image-src'] ?? '',
+              'url':
+                  ev['data-page-selector-href'] ??
+                  ev['web-scraper-start-url'] ??
+                  '',
+            };
+          })
+          .where((e) {
+            final d = _parseDate(e['date']);
+            return d != null && !d.isBefore(today);
+          })
+          .toList();
+
+      events.sort((a, b) {
+        final da = _parseDate(a['date']);
+        final db = _parseDate(b['date']);
+        return (da ?? today).compareTo(db ?? today);
+      });
+
+      setState(() {
+        _upcomingEvents = events.take(3).toList();
+      });
+
+      // Debug (puoi rimuovere dopo)
+      for (var e in _upcomingEvents) {
+        debugPrint('🗓 Evento: ${e['title']} - ${e['date']}');
       }
-
-      items.sort((a, b) => a.endDate.compareTo(b.endDate));
-      _upcomingEvents = items.take(3).toList();
-    } catch (_) {
-      _upcomingEvents = [];
+    } catch (e) {
+      debugPrint('❌ Errore caricamento eventi: $e');
     }
   }
 
-  DateTime? _getEndDateFromEvent(Map ev) {
-    if (ev['event_dates-0'] != null) {
-      final d = _parseEndFromRange(ev['event_dates-0'].toString());
-      if (d != null) return d;
-    }
-    if (ev['data'] != null) {
-      final d = _parseItalianDateEnd(ev['data'].toString());
-      if (d != null) return d;
-    }
-    return null;
+  // 🔹 LETTURA DATE FLESSIBILE
+  DateTime? _parseDate(String? dateStr) {
+    if (dateStr == null || dateStr.trim().isEmpty) return null;
+
+    final cleaned = dateStr.split('-').first.trim();
+    final match = RegExp(
+      r'(\d{1,2})(?:[\/\-\s]+)([A-Za-z]+|\d{1,2})(?:[\/\-\s]+)?(\d{2,4})?',
+    ).firstMatch(cleaned);
+
+    if (match == null) return null;
+
+    const mesi = {
+      'gennaio': 1,
+      'febbraio': 2,
+      'marzo': 3,
+      'aprile': 4,
+      'maggio': 5,
+      'giugno': 6,
+      'luglio': 7,
+      'agosto': 8,
+      'settembre': 9,
+      'ottobre': 10,
+      'novembre': 11,
+      'dicembre': 12,
+    };
+
+    final giorno = int.tryParse(match.group(1) ?? '') ?? 1;
+    final meseStr = match.group(2)!.toLowerCase();
+    final mese = mesi[meseStr] ?? int.tryParse(meseStr) ?? 1;
+    var anno = int.tryParse(match.group(3) ?? '') ?? DateTime.now().year;
+    if (anno < 100) anno += 2000;
+
+    return DateTime(anno, mese, giorno);
   }
 
-  DateTime? _parseEndFromRange(String s) {
-    final m = RegExp(r'(\d{1,2})/(\d{1,2})/(\d{2,4})(?!.*\d)').firstMatch(s);
-    if (m == null) return null;
-    final day = int.parse(m.group(1)!);
-    final month = int.parse(m.group(2)!) - 1;
-    var year = int.parse(m.group(3)!);
-    if (year < 100) year += 2000;
-    return DateTime(year, month + 1, day);
-  }
-
-  static const _itMonths = {
-    'gennaio': 1,
-    'febbraio': 2,
-    'marzo': 3,
-    'aprile': 4,
-    'maggio': 5,
-    'giugno': 6,
-    'luglio': 7,
-    'agosto': 8,
-    'settembre': 9,
-    'ottobre': 10,
-    'novembre': 11,
-    'dicembre': 12,
-  };
-
-  DateTime? _parseItalianDateEnd(String s) {
-    final m = RegExp(
-      r'(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})',
-      caseSensitive: false,
-    ).firstMatch(s);
-    if (m != null) {
-      final day = int.parse(m.group(1)!);
-      final mon = _itMonths[m.group(2)!.toLowerCase()] ?? 1;
-      final year = int.parse(m.group(3)!);
-      return DateTime(year, mon, day);
-    }
-    return null;
+  Future<void> _changeAvatar() async {
+    final XFile? img = await picker.pickImage(source: ImageSource.gallery);
+    if (img == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('profile_avatar', img.path);
+    setState(() => _avatarFile = File(img.path));
   }
 
   void _onNavTap(int index) {
@@ -209,22 +178,35 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _openEvent(String url) async {
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color topBarColor = isDark
+        ? const Color(0xFF3a602a)
+        : AppColors.primary(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFe8e9ea),
+      backgroundColor: AppColors.background(context),
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Occhio al Borgo',
-          style: TextStyle(fontFamily: 'Cinzel'),
+          style: TextStyle(
+            color: AppColors.foreground(context),
+            fontFamily: 'Cinzel',
+            fontWeight: FontWeight.bold,
+          ),
         ),
-        backgroundColor: const Color(0xFF91be7e),
+        backgroundColor: topBarColor,
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
+            icon: Icon(Icons.settings, color: AppColors.foreground(context)),
             tooltip: 'Impostazioni',
             onPressed: () => Navigator.pushNamed(context, '/settings'),
           ),
@@ -233,344 +215,290 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: CustomBottomNavBar(
         currentIndex: 0,
         onTap: _onNavTap,
+        backgroundColor: topBarColor,
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              GestureDetector(
-                onTap: _changeProfileImage,
-                child: CircleAvatar(
-                  radius: 45,
-                  backgroundColor: const Color(0xFF91be7e),
-                  backgroundImage: _profileImage != null
-                      ? FileImage(_profileImage!)
-                      : null,
-                  child: _profileImage == null
-                      ? const Icon(Icons.person, size: 50, color: Colors.white)
-                      : null,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Bentornata, ${_username ?? ""}!',
-                style: const TextStyle(
-                  fontFamily: 'Cinzel',
-                  fontSize: 22,
-                  color: Colors.black,
-                ),
-              ),
-              const SizedBox(height: 28),
-              const Text(
-                'Ultimo borgo visitato',
-                style: TextStyle(
-                  fontFamily: 'Cinzel',
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _lastBorgoPhoto != null
-                    ? Image.file(
-                        _lastBorgoPhoto!,
-                        width: screenWidth * 0.55,
-                        height: screenWidth * 0.55,
-                        fit: BoxFit.cover,
-                      )
-                    : Image.asset(
-                        'assets/images/borgo_placeholder.png',
-                        width: screenWidth * 0.55,
-                        height: screenWidth * 0.55,
-                        fit: BoxFit.cover,
-                      ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _lastDate != null
-                    ? _formatItalianDate(_lastDate!)
-                    : 'Data non disponibile',
-                style: const TextStyle(fontFamily: 'Cormorant', fontSize: 14),
-              ),
-              Text(
-                _lastBorgoName ?? 'Nome borgo sconosciuto',
-                style: const TextStyle(
-                  fontFamily: 'Cinzel',
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => Navigator.pushNamed(context, '/scatta'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3a602a),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 14,
-                    horizontal: 24,
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 500),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // 👤 Avatar
+                  GestureDetector(
+                    onTap: _changeAvatar,
+                    child: CircleAvatar(
+                      radius: 50,
+                      backgroundColor: AppColors.primary(context),
+                      backgroundImage: _avatarFile != null
+                          ? FileImage(_avatarFile!)
+                          : null,
+                      child: _avatarFile == null
+                          ? Icon(
+                              Icons.person,
+                              color: AppColors.foreground(context),
+                              size: 50,
+                            )
+                          : null,
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
+                  const SizedBox(height: 10),
+                  Text(
+                    'Bentornata, ${_username ?? "Utente"}!',
+                    style: TextStyle(
+                      fontFamily: 'Cinzel',
+                      fontSize: 22,
+                      color: AppColors.foreground(context),
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+
+                  // 📍 Ultimo borgo
+                  Text(
+                    'Ultimo borgo visitato',
+                    style: TextStyle(
+                      fontFamily: 'Cinzel',
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.foreground(context),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
                     borderRadius: BorderRadius.circular(8),
+                    child: _lastBorgoPhoto != null
+                        ? Image.file(
+                            _lastBorgoPhoto!,
+                            width: 200,
+                            height: 200,
+                            fit: BoxFit.cover,
+                          )
+                        : Image.asset(
+                            'assets/images/borgo_placeholder.png',
+                            width: 200,
+                            height: 200,
+                            fit: BoxFit.cover,
+                          ),
                   ),
-                ),
-                child: const Text(
-                  'SCATTA UN NUOVO BORGO',
-                  style: TextStyle(
-                    fontFamily: 'Cinzel',
-                    color: Colors.white,
-                    fontSize: 14,
+                  const SizedBox(height: 8),
+                  Text(
+                    _lastBorgoDate != null
+                        ? 'Visitato il ${_lastBorgoDate!.split("T").first}'
+                        : 'Data non disponibile',
+                    style: TextStyle(
+                      fontFamily: 'Cormorant',
+                      fontSize: 14,
+                      color: AppColors.subtext(context),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 34),
-              const Text(
-                'Badge ottenuti',
-                style: TextStyle(
-                  fontFamily: 'Cinzel',
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (_unlockedBadges.isNotEmpty)
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 20,
-                  runSpacing: 16,
-                  children: _unlockedBadges
-                      .map(
-                        (b) => _buildBadge(
-                          b['title'] as String,
-                          b['icon'] as IconData,
-                        ),
-                      )
-                      .toList(),
-                )
-              else
-                const Text(
-                  'Non hai ancora sbloccato nessun badge...\nContinua ad esplorare i borghi!',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Cormorant',
-                    fontSize: 15,
-                    color: Colors.black54,
-                    fontStyle: FontStyle.italic,
+                  Text(
+                    _lastBorgoName ?? 'Nome borgo sconosciuto',
+                    style: TextStyle(
+                      fontFamily: 'Cinzel',
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.foreground(context),
+                    ),
                   ),
-                ),
-              const SizedBox(height: 34),
-              const Text(
-                'Eventi in arrivo',
-                style: TextStyle(
-                  fontFamily: 'Cinzel',
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (_upcomingEvents.isEmpty)
-                const Text(
-                  'Nessun evento disponibile al momento.',
-                  style: TextStyle(fontFamily: 'Cormorant', fontSize: 14),
-                )
-              else
-                Column(
-                  children: _upcomingEvents
-                      .map(
-                        (e) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _buildEventCard(e),
-                        ),
-                      )
-                      .toList(),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+                  const SizedBox(height: 16),
 
-  Widget _buildBadge(String title, IconData icon) {
-    return Column(
-      children: [
-        Container(
-          width: 70,
-          height: 70,
-          decoration: const BoxDecoration(
-            color: Color(0xFF91be7e),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: Colors.white, size: 32),
-        ),
-        const SizedBox(height: 6),
-        SizedBox(
-          width: 90,
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontFamily: 'Cormorant', fontSize: 13),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildEventCard(_EventoItem e) {
-    Future<void> _openLink(String url) async {
-      if (url.isEmpty) return;
-      final uri = Uri.parse(url);
-      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok) debugPrint('Impossibile aprire: $url');
-    }
-
-    return InkWell(
-      onTap: () async {
-        if (e.img.isNotEmpty) {
-          await _openLink(e.img);
-        } else if (e.url.isNotEmpty) {
-          await _openLink(e.url);
-        }
-      },
-      onLongPress: () async {
-        if (e.url.isNotEmpty) await _openLink(e.url);
-      },
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        elevation: 3,
-        child: Row(
-          children: [
-            Container(
-              width: 90,
-              height: 90,
-              decoration: const BoxDecoration(
-                color: Color(0xFF91be7e),
-                borderRadius: BorderRadius.horizontal(
-                  left: Radius.circular(10),
-                ),
-              ),
-              child: e.img.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: const BorderRadius.horizontal(
-                        left: Radius.circular(10),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pushNamed(context, '/scatta'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent(context),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 14,
+                        horizontal: 24,
                       ),
-                      child: Image.network(e.img, fit: BoxFit.cover),
-                    )
-                  : const Icon(Icons.event, color: Colors.white, size: 40),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      e.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'SCATTA UN NUOVO BORGO',
+                      style: TextStyle(
+                        fontFamily: 'Cinzel',
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+
+                  // 🏅 Badge
+                  Text(
+                    'Badge ottenuti',
+                    style: TextStyle(
+                      fontFamily: 'Cinzel',
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.foreground(context),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _unlockedBadges.isNotEmpty
+                      ? Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 20,
+                          runSpacing: 16,
+                          children: _unlockedBadges.map((b) {
+                            return Column(
+                              children: [
+                                Container(
+                                  width: 70,
+                                  height: 70,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary(context),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.star,
+                                    color: AppColors.foreground(context),
+                                    size: 32,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                SizedBox(
+                                  width: 90,
+                                  child: Text(
+                                    b,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontFamily: 'Cormorant',
+                                      fontSize: 13,
+                                      color: AppColors.foreground(context),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        )
+                      : Text(
+                          'Nessun badge ancora sbloccato.\nContinua ad esplorare!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Cormorant',
+                            fontSize: 15,
+                            color: AppColors.subtext(context),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                  const SizedBox(height: 30),
+
+                  // 📅 Eventi
+                  Text(
+                    'Eventi in arrivo',
+                    style: TextStyle(
+                      fontFamily: 'Cinzel',
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.foreground(context),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  TextButton.icon(
+                    onPressed: () =>
+                        Navigator.pushNamed(context, '/segnala_evento'),
+                    icon: Icon(
+                      Icons.add_circle_outline,
+                      color: AppColors.accent(context),
+                    ),
+                    label: Text(
+                      'Segnala un evento',
+                      style: TextStyle(
                         fontFamily: 'Cinzel',
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
+                        color: AppColors.accent(context),
                       ),
                     ),
-                    const SizedBox(height: 4),
+                  ),
+
+                  const SizedBox(height: 12),
+                  if (_upcomingEvents.isEmpty)
                     Text(
-                      'Fino al ${_formatItalianDate(e.endDate)}',
-                      style: const TextStyle(
+                      'Nessun evento disponibile al momento.',
+                      style: TextStyle(
                         fontFamily: 'Cormorant',
-                        fontSize: 13,
-                        color: Colors.black54,
+                        fontSize: 14,
+                        color: AppColors.subtext(context),
                       ),
+                    )
+                  else
+                    Column(
+                      children: _upcomingEvents.map((e) {
+                        return GestureDetector(
+                          onTap: () => _openEvent(e['url']),
+                          child: Card(
+                            color: AppColors.card(context),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 3,
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              children: [
+                                if (e['img'] != null && e['img'].isNotEmpty)
+                                  ClipRRect(
+                                    borderRadius: const BorderRadius.horizontal(
+                                      left: Radius.circular(10),
+                                    ),
+                                    child: Image.network(
+                                      e['img'],
+                                      width: 90,
+                                      height: 90,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(10),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          e['title'],
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontFamily: 'Cinzel',
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppColors.foreground(
+                                              context,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          e['date'],
+                                          style: TextStyle(
+                                            fontFamily: 'Cormorant',
+                                            fontSize: 13,
+                                            color: AppColors.subtext(context),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
-  }
-
-  String _formatItalianDate(DateTime d) {
-    const mesi = [
-      'gennaio',
-      'febbraio',
-      'marzo',
-      'aprile',
-      'maggio',
-      'giugno',
-      'luglio',
-      'agosto',
-      'settembre',
-      'ottobre',
-      'novembre',
-      'dicembre',
-    ];
-    return '${d.day.toString().padLeft(2, '0')} ${mesi[d.month - 1]} ${d.year}';
-  }
-}
-
-class _EventoItem {
-  final String title;
-  final String img;
-  final String url;
-  final DateTime endDate;
-
-  _EventoItem({
-    required this.title,
-    required this.img,
-    required this.url,
-    required this.endDate,
-  });
-}
-
-// ✅ Funzione riconoscimento borgo differito
-Future<void> checkPendingBorgo() async {
-  final prefs = await SharedPreferences.getInstance();
-  final hasPending = prefs.getBool('pending_borgo') ?? false;
-  if (!hasPending) return;
-
-  final path = prefs.getString('pending_borgo_path');
-  final lat = prefs.getDouble('last_borgo_lat');
-  final lng = prefs.getDouble('last_borgo_lng');
-  if (lat == null || lng == null) return;
-
-  final connectivity = await Connectivity().checkConnectivity();
-  final battery = Battery();
-  final level = await battery.batteryLevel;
-  if (connectivity == ConnectivityResult.none || level <= 10) {
-    print('⚠️ Offline o batteria bassa: riconoscimento rinviato');
-    return;
-  }
-
-  try {
-    final jsonData = await rootBundle.loadString('assets/data/borghi_min.json');
-    final List data = json.decode(jsonData);
-    double minDistance = double.infinity;
-    String? nearestName;
-
-    for (final borgo in data) {
-      final dist = sqrt(
-        pow(lat - borgo['lat'], 2) + pow(lng - borgo['lng'], 2),
-      );
-      if (dist < minDistance) {
-        minDistance = dist;
-        nearestName = borgo['name'];
-      }
-    }
-
-    await prefs.setString(
-      'last_borgo_name',
-      nearestName ?? 'Borgo sconosciuto',
-    );
-    await prefs.setBool('pending_borgo', false);
-    print('✅ Borgo riconosciuto in differita: $nearestName');
-  } catch (e) {
-    print('❌ Errore riconoscimento differito: $e');
   }
 }

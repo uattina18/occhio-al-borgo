@@ -1,14 +1,14 @@
-// lib/screens/profilo_screen.dart
-import 'dart:async';
 import 'dart:io';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart' as picker;
-import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/bottom_navbar.dart';
+import 'package:occhio_al_borgo/theme/app_theme.dart';
 
 class ProfiloScreen extends StatefulWidget {
   const ProfiloScreen({super.key});
@@ -18,165 +18,226 @@ class ProfiloScreen extends StatefulWidget {
 }
 
 class _ProfiloScreenState extends State<ProfiloScreen>
-    with SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
+  final _auth = FirebaseAuth.instance;
+  final _firestore = FirebaseFirestore.instance;
+  final _picker = ImagePicker();
+
   String _username = 'Utente';
+  String _email = '';
+  String? _photoUrl;
   File? _avatarFile;
-  int _borghi = 0;
-  int _selfie = 0;
-  int _eventi = 0;
-  int _avatarVersion = 1;
+  bool _loading = true;
 
-  final picker.ImagePicker _picker = picker.ImagePicker();
-  String? _toastMsg;
-  late final AnimationController _toastCtrl;
-  late final Animation<double> _toastOpacity;
-  Timer? _toastTimer;
+  int _borghiCount = 0;
+  int _selfieCount = 0;
+  int _eventiCount = 0;
 
-  static const _currentIndex = 4;
+  List<String> _unlockedBadges = [];
+  Map<String, dynamic> _badgeData = {};
+  String? _newBadgeTitle;
+
+  late AnimationController _popupController;
+  late Animation<double> _scaleAnim;
+
+  String _getUserTitle() {
+    if (_unlockedBadges.contains('collezionista')) return 'Collezionista 🏆';
+    if (_unlockedBadges.contains('instancabile')) return 'Instancabile 🌍';
+    if (_unlockedBadges.contains('esploratrice')) return 'Esploratore 🗺️';
+    if (_unlockedBadges.contains('fotografa-locale'))
+      return 'Fotografa locale 📸';
+    if (_unlockedBadges.contains('borgo-lover')) return 'Borgo Lover ❤️';
+    return 'Esploratore in erba 🌱';
+  }
 
   @override
   void initState() {
     super.initState();
-    _toastCtrl = AnimationController(
+    WidgetsBinding.instance.addObserver(this);
+    _popupController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 400),
     );
-    _toastOpacity = CurvedAnimation(parent: _toastCtrl, curve: Curves.easeOut);
-    _loadUserData();
+    _scaleAnim = CurvedAnimation(
+      parent: _popupController,
+      curve: Curves.easeOutBack,
+    );
+    _loadProfile();
+    _loadBadgesData();
   }
 
   @override
   void dispose() {
-    _toastTimer?.cancel();
-    _toastCtrl.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _popupController.dispose();
     super.dispose();
   }
 
-  void _showToast(String msg) {
-    _toastTimer?.cancel();
-    setState(() => _toastMsg = msg);
-    _toastCtrl.forward();
-    _toastTimer = Timer(const Duration(seconds: 2), () {
-      _toastCtrl.reverse().whenComplete(() {
-        if (mounted) setState(() => _toastMsg = null);
-      });
-    });
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _loadProfile();
   }
 
-  Future<Directory> _ensureAvatarDir() async {
-    final doc = await getApplicationDocumentsDirectory();
-    final dir = Directory('${doc.path}/profile');
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    return dir;
-  }
-
-  Future<File> _avatarDestFile() async {
-    final dir = await _ensureAvatarDir();
-    return File('${dir.path}/avatar.jpg');
-  }
-
-  Future<void> _saveAvatarFromXFile(picker.XFile x) async {
+  Future<void> _loadBadgesData() async {
     try {
-      final dest = await _avatarDestFile();
-      await File(x.path).copy(dest.path);
-
-      // Evict vecchia immagine dal cache per forzare l’aggiornamento
-      try {
-        final provider = FileImage(dest);
-        await provider.evict();
-      } catch (_) {}
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('avatar_path', dest.path);
-      final ver = DateTime.now().millisecondsSinceEpoch;
-      await prefs.setInt('avatar_version', ver);
-
+      final jsonString = await rootBundle.loadString('assets/data/badges.json');
+      final data = json.decode(jsonString);
+      final List<dynamic> list = data['badges'] ?? [];
       setState(() {
-        _avatarFile = dest;
-        _avatarVersion = ver;
+        _badgeData = {for (var b in list) b['id']: b};
       });
-
-      _showToast('✅ Avatar aggiornato');
-    } catch (_) {
-      _showToast('⚠️ Impossibile salvare l’immagine');
+    } catch (e) {
+      debugPrint('❌ Errore caricamento badges.json: $e');
     }
   }
 
-  Future<void> _loadUserData() async {
+  Future<void> _loadProfile() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _username = prefs.getString('username') ?? 'Utente';
-      _borghi = prefs.getInt('borghi') ?? 0;
-      _selfie = prefs.getInt('selfie') ?? 0;
-      _eventi = prefs.getInt('eventi') ?? 0;
-      _avatarVersion = prefs.getInt('avatar_version') ?? 1;
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
 
-      final path = prefs.getString('avatar_path');
-      if (path != null && File(path).existsSync()) {
-        _avatarFile = File(path);
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        setState(() {
+          _username = data['username'] ?? 'Utente';
+          _email = data['email'] ?? '';
+          _photoUrl = data['photoUrl'];
+        });
+        await prefs.setString('username', _username);
+        await prefs.setString('email', _email);
+        if (_photoUrl != null) await prefs.setString('photoUrl', _photoUrl!);
+      } else {
+        setState(() {
+          _username = prefs.getString('username') ?? 'Utente';
+          _email = prefs.getString('email') ?? '';
+          _photoUrl = prefs.getString('photoUrl');
+        });
       }
-    });
+
+      final badgeList = prefs.getStringList('unlocked_badges') ?? [];
+      final lastBadgeShown = prefs.getString('last_badge_shown');
+
+      if (badgeList.isNotEmpty && badgeList.last != lastBadgeShown) {
+        final lastBadge = badgeList.last;
+        final badgeTitle = _badgeData[lastBadge]?['title'] ?? lastBadge;
+        _showNewBadgePopup(badgeTitle);
+        await prefs.setString('last_badge_shown', lastBadge);
+      }
+
+      setState(() => _unlockedBadges = badgeList);
+    } catch (e) {
+      debugPrint('Errore caricamento profilo: $e');
+    }
+
+    setState(() => _loading = false);
   }
 
-  Future<void> _openAvatarMenu() async {
-    final source = await showModalBottomSheet<picker.ImageSource>(
+  void _showNewBadgePopup(String title) async {
+    setState(() => _newBadgeTitle = title);
+    await _popupController.forward(from: 0);
+    await Future.delayed(const Duration(seconds: 3));
+    if (mounted) setState(() => _newBadgeTitle = null);
+  }
+
+  Future<void> _updatePhoto(File imageFile) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      final ref = FirebaseStorage.instance.ref().child('avatars/$uid.jpg');
+      await ref.putFile(imageFile);
+      final newUrl = await ref.getDownloadURL();
+
+      await _firestore.collection('users').doc(uid).update({
+        'photoUrl': newUrl,
+      });
+      await _auth.currentUser!.updatePhotoURL(newUrl);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('photoUrl', newUrl);
+
+      setState(() {
+        _photoUrl = newUrl;
+        _avatarFile = null;
+      });
+    } catch (e) {
+      debugPrint('❌ Errore aggiornamento foto profilo: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Errore nel caricamento dell’immagine')),
+      );
+    }
+  }
+
+  Future<void> _removePhoto() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      await _firestore.collection('users').doc(uid).update({'photoUrl': null});
+      await _auth.currentUser!.updatePhotoURL(null);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('photoUrl');
+
+      setState(() {
+        _photoUrl = null;
+        _avatarFile = null;
+      });
+    } catch (e) {
+      debugPrint('❌ Errore rimozione foto: $e');
+    }
+  }
+
+  void _openAvatarOptions() {
+    showModalBottomSheet(
       context: context,
+      backgroundColor: AppColors.card(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: Wrap(
           children: [
             ListTile(
               leading: const Icon(Icons.photo),
-              title: const Text('Carica da galleria'),
-              onTap: () => Navigator.pop(context, picker.ImageSource.gallery),
+              title: const Text('Scegli dalla galleria'),
+              onTap: () async {
+                Navigator.pop(context);
+                final picked = await _picker.pickImage(
+                  source: ImageSource.gallery,
+                );
+                if (picked != null) await _updatePhoto(File(picked.path));
+              },
             ),
             ListTile(
               leading: const Icon(Icons.camera_alt),
-              title: const Text('Scatta foto'),
-              onTap: () => Navigator.pop(context, picker.ImageSource.camera),
+              title: const Text('Scatta una foto'),
+              onTap: () async {
+                Navigator.pop(context);
+                final picked = await _picker.pickImage(
+                  source: ImageSource.camera,
+                );
+                if (picked != null) await _updatePhoto(File(picked.path));
+              },
             ),
-            if (_avatarFile != null)
+            if (_photoUrl != null)
               ListTile(
-                leading: const Icon(
-                  Icons.delete_outline,
-                  color: Color(0xFFB00020),
+                leading: const Icon(Icons.delete, color: Colors.redAccent),
+                title: const Text(
+                  'Rimuovi immagine',
+                  style: TextStyle(color: Colors.redAccent),
                 ),
-                title: const Text('Rimuovi'),
-                onTap: () => Navigator.pop(context, null),
+                onTap: () {
+                  Navigator.pop(context);
+                  _removePhoto();
+                },
               ),
           ],
         ),
       ),
     );
-
-    if (source == null) {
-      if (_avatarFile != null) {
-        await _removeAvatar();
-      }
-      return;
-    }
-
-    final picked = await _picker.pickImage(source: source, imageQuality: 90);
-    if (picked != null) {
-      await _saveAvatarFromXFile(picked);
-    }
-  }
-
-  Future<void> _removeAvatar() async {
-    try {
-      final dest = await _avatarDestFile();
-      if (dest.existsSync()) dest.deleteSync();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('avatar_path');
-      await prefs.remove('avatar_version');
-      setState(() {
-        _avatarFile = null;
-        _avatarVersion = 1;
-      });
-      _showToast('🗑️ Avatar rimosso');
-    } catch (_) {
-      _showToast('⚠️ Errore durante la rimozione');
-    }
   }
 
   void _onNavTap(int index) {
@@ -198,305 +259,331 @@ class _ProfiloScreenState extends State<ProfiloScreen>
     }
   }
 
-  // 🔐 Logout completo
-  Future<void> _logoutFromProfile() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Conferma logout'),
-        content: const Text('Vuoi davvero uscire dal tuo account?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annulla'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              'Logout',
-              style: TextStyle(color: Color(0xFFB00020)),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      await FirebaseAuth.instance.signOut();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Logout effettuato con successo')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Errore durante il logout')),
-        );
-      }
+  IconData _iconForBadge(String iconName) {
+    switch (iconName) {
+      case 'camera':
+        return Icons.camera_alt;
+      case 'heart':
+        return Icons.favorite;
+      case 'map':
+      case 'map-pin':
+        return Icons.map;
+      case 'award':
+        return Icons.emoji_events;
+      case 'globe':
+        return Icons.public;
+      case 'calendar':
+        return Icons.event;
+      case 'search':
+        return Icons.search;
+      case 'tickets':
+        return Icons.local_activity;
+      default:
+        return Icons.star;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    const green = Color(0xFF91be7e);
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: AppColors.background(context),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color topBarColor = isDark
+        ? const Color(0xFF3a602a)
+        : const Color(0xFF91be7e);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFe8e9ea),
       appBar: AppBar(
-        title: const Text('Profilo', style: TextStyle(fontFamily: 'Cinzel')),
-        backgroundColor: green,
+        title: const Text('Profilo'),
+        backgroundColor: topBarColor,
         centerTitle: true,
-        actions: [
-          IconButton(
-            tooltip: 'Impostazioni',
-            icon: const Icon(Icons.settings, color: Colors.white),
-            onPressed: () => Navigator.pushNamed(context, '/settings'),
-          ),
-        ],
       ),
+      backgroundColor: AppColors.background(context),
       bottomNavigationBar: CustomBottomNavBar(
-        currentIndex: _currentIndex,
+        currentIndex: 4,
         onTap: _onNavTap,
+        backgroundColor: topBarColor,
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // 🔹 Avatar
-              Center(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    CircleAvatar(
-                      key: ValueKey(_avatarVersion), // ✅ forza rebuild
-                      radius: 55,
-                      backgroundColor: green,
-                      backgroundImage: _avatarFile != null
-                          ? FileImage(_avatarFile!)
-                          : null,
-                      child: _avatarFile == null
-                          ? const Icon(
-                              Icons.person,
-                              size: 70,
-                              color: Colors.white,
-                            )
-                          : null,
-                    ),
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: _openAvatarMenu,
-                        child: Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.2),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Container(
-                            margin: const EdgeInsets.all(5),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF3a602a),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.edit,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                          ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTap: _openAvatarOptions,
+                        child: CircleAvatar(
+                          radius: 55,
+                          backgroundColor: AppColors.primary(context),
+                          backgroundImage: _photoUrl != null
+                              ? NetworkImage(_photoUrl!)
+                              : _avatarFile != null
+                              ? FileImage(_avatarFile!) as ImageProvider
+                              : null,
+                          child: _photoUrl == null && _avatarFile == null
+                              ? Icon(
+                                  Icons.person,
+                                  size: 60,
+                                  color: AppColors.foreground(context),
+                                )
+                              : null,
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      Text(
+                        _username,
+                        style: TextStyle(
+                          fontFamily: 'Cinzel',
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.foreground(context),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _email,
+                        style: TextStyle(
+                          fontFamily: 'Cormorant',
+                          fontSize: 16,
+                          color: AppColors.subtext(context),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _getUserTitle(),
+                        style: TextStyle(
+                          fontFamily: 'Cormorant',
+                          fontSize: 16,
+                          color: AppColors.foreground(context),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // 🔢 Contatori
+                      Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.card(context),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 14,
+                          horizontal: 10,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildStat('Borghi', _borghiCount),
+                            _buildStat('Selfie', _selfieCount),
+                            _buildStat('Eventi', _eventiCount),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 30),
+
+                      // 🏅 Badge ottenuti
+                      const Text(
+                        'Badge ottenuti',
+                        style: TextStyle(
+                          fontFamily: 'Cinzel',
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_unlockedBadges.isNotEmpty)
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 20,
+                          runSpacing: 16,
+                          children: _unlockedBadges.map((id) {
+                            final badge = _badgeData[id];
+                            final iconName = badge?['icon'] ?? 'star';
+                            final title =
+                                badge?['title'] ?? id.replaceAll('-', ' ');
+                            return Column(
+                              children: [
+                                Container(
+                                  width: 70,
+                                  height: 70,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary(context),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    _iconForBadge(iconName),
+                                    color: AppColors.foreground(context),
+                                    size: 32,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                SizedBox(
+                                  width: 90,
+                                  child: Text(
+                                    title,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontFamily: 'Cormorant',
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        )
+                      else
+                        Text(
+                          'Nessun badge ancora sbloccato.\nContinua ad esplorare!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Cormorant',
+                            fontSize: 15,
+                            color: AppColors.subtext(context),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      const SizedBox(height: 30),
+                      _buildLinkTile(
+                        icon: Icons.bookmark,
+                        label: 'Borghi salvati',
+                        onTap: () =>
+                            Navigator.pushNamed(context, '/borghi_salvati'),
+                      ),
+                      _buildLinkTile(
+                        icon: Icons.location_on,
+                        label: 'Borghi visitati',
+                        onTap: () =>
+                            Navigator.pushNamed(context, '/borghi_visitati'),
+                      ),
+                      _buildLinkTile(
+                        icon: Icons.people,
+                        label: 'Community',
+                        onTap: () => Navigator.pushNamed(context, '/community'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // 🌟 Popup badge sbloccato
+          if (_newBadgeTitle != null)
+            Center(
+              child: ScaleTransition(
+                scale: _scaleAnim,
+                child: AnimatedOpacity(
+                  opacity: 1,
+                  duration: const Duration(milliseconds: 300),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    margin: const EdgeInsets.symmetric(horizontal: 40),
+                    decoration: BoxDecoration(
+                      color: AppColors.card(context),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.foreground(context).withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-              Text(
-                _username,
-                style: const TextStyle(
-                  fontFamily: 'Cinzel',
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Borgo Lover',
-                style: TextStyle(
-                  fontFamily: 'Cormorant',
-                  fontSize: 16,
-                  color: Colors.black54,
-                ),
-              ),
-
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 14,
-                  horizontal: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD7D7D9),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    _stat(label: 'Borghi', value: _borghi),
-                    _divider(),
-                    _stat(label: 'Selfie', value: _selfie),
-                    _divider(),
-                    _stat(label: 'Eventi', value: _eventi),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 26),
-              _linkRow(
-                icon: Icons.notifications_none,
-                label: 'Notifiche',
-                onTap: () => Navigator.pushNamed(context, '/notifiche'),
-              ),
-              _linkRow(
-                icon: Icons.settings_outlined,
-                label: 'Impostazioni',
-                onTap: () => Navigator.pushNamed(context, '/settings'),
-              ),
-              _linkRow(
-                icon: Icons.explore_outlined,
-                label: 'Esplora',
-                onTap: () =>
-                    Navigator.pushReplacementNamed(context, '/explore'),
-              ),
-              const SizedBox(height: 8),
-
-              // 🔴 Logout
-              ElevatedButton.icon(
-                onPressed: _logoutFromProfile,
-                icon: const Icon(Icons.logout, color: Colors.white, size: 18),
-                label: const Text(
-                  'LOGOUT',
-                  style: TextStyle(
-                    fontFamily: 'Cinzel',
-                    color: Colors.white,
-                    fontSize: 14,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3a602a),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 12,
-                    horizontal: 20,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-
-      // 🔔 Toast
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: _toastMsg == null
-          ? null
-          : FadeTransition(
-              opacity: _toastOpacity,
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.symmetric(
-                  vertical: 10,
-                  horizontal: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.emoji_events,
+                          color: Color(0xFF91be7e),
+                          size: 50,
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Hai sbloccato un nuovo badge!',
+                          style: TextStyle(
+                            fontFamily: 'Cinzel',
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _newBadgeTitle!,
+                          style: TextStyle(
+                            fontFamily: 'Cormorant',
+                            fontSize: 16,
+                            color: AppColors.foreground(context),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Text(
-                  _toastMsg!,
-                  style: const TextStyle(fontFamily: 'Cinzel', fontSize: 13),
-                  textAlign: TextAlign.center,
+                  ),
                 ),
               ),
             ),
-    );
-  }
-
-  Widget _stat({required String label, required int value}) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(
-            '$value',
-            style: const TextStyle(
-              fontFamily: 'Cinzel',
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Text(
-            label,
-            style: const TextStyle(
-              fontFamily: 'Cormorant',
-              fontSize: 12,
-              color: Colors.black54,
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _divider() => Container(
-    width: 1,
-    height: 28,
-    margin: const EdgeInsets.symmetric(horizontal: 6),
-    color: Colors.black12,
-  );
+  Widget _buildStat(String label, int value) {
+    return Column(
+      children: [
+        Text(
+          '$value',
+          style: TextStyle(
+            fontFamily: 'Cinzel',
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: AppColors.foreground(context),
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'Cormorant',
+            fontSize: 14,
+            color: AppColors.subtext(context),
+          ),
+        ),
+      ],
+    );
+  }
 
-  Widget _linkRow({
+  Widget _buildLinkTile({
     required IconData icon,
     required String label,
     required VoidCallback onTap,
   }) {
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.only(top: 16),
+      elevation: 2,
+      color: AppColors.card(context),
       child: ListTile(
-        leading: Icon(icon, color: const Color(0xFF3a602a)),
+        leading: Icon(icon, color: AppColors.primary(context)),
         title: Text(
           label,
-          style: const TextStyle(fontFamily: 'Cormorant', fontSize: 16),
+          style: TextStyle(
+            fontFamily: 'Cormorant',
+            fontSize: 16,
+            color: AppColors.foreground(context),
+          ),
         ),
-        trailing: const Icon(Icons.chevron_right, color: Colors.black54),
+        trailing: Icon(Icons.chevron_right, color: AppColors.subtext(context)),
         onTap: onTap,
       ),
     );

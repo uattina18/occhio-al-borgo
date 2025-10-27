@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/bottom_navbar.dart';
+import 'package:occhio_al_borgo/theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   final ThemeMode currentMode;
@@ -74,18 +75,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final Uri emailUri = Uri(
       scheme: 'mailto',
       path: 'supporto@occhioalborgo.it',
-      query: Uri.encodeFull(
-        'subject=Richiesta assistenza - Occhio al Borgo&body=Ciao, ho bisogno di aiuto con...',
-      ),
+      queryParameters: {
+        'subject': 'Richiesta assistenza - Occhio al Borgo',
+        'body': 'Ciao, ho bisogno di aiuto con...',
+      },
     );
 
-    if (await canLaunchUrl(emailUri)) {
-      await launchUrl(emailUri);
-    } else {
+    try {
+      final canOpen = await canLaunchUrl(emailUri);
+      if (!canOpen) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Nessuna app di posta trovata sul dispositivo.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      await launchUrl(emailUri, mode: LaunchMode.externalApplication);
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text('Impossibile aprire l’app di posta')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Errore apertura email: $e')));
       }
     }
   }
@@ -181,21 +195,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: _toggleNotifications,
                 thumbIcon: WidgetStateProperty.resolveWith<Icon?>(
                   (states) => states.contains(WidgetState.selected)
-                      ? const Icon(
+                      ? Icon(
                           Icons.notifications_active,
-                          color: Colors.white,
+                          color: AppColors.foreground(context),
                           size: 14,
                         )
-                      : const Icon(
+                      : Icon(
                           Icons.notifications_off,
-                          color: Colors.white,
+                          color: AppColors.foreground(context),
                           size: 14,
                         ),
                 ),
                 trackColor: WidgetStateProperty.resolveWith<Color>(
                   (states) => states.contains(WidgetState.selected)
-                      ? const Color(0xFF91be7e)
-                      : Colors.black26,
+                      ? AppColors.primary(context)
+                      : AppColors.foreground(context),
                 ),
               ),
             ),
@@ -206,10 +220,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Center(
               child: ElevatedButton.icon(
                 onPressed: _logout,
-                icon: const Icon(Icons.logout, color: Colors.white),
-                label: const Text(
+                icon: Icon(Icons.logout, color: AppColors.foreground(context)),
+                label: Text(
                   'LOGOUT',
-                  style: TextStyle(fontFamily: 'Cinzel', color: Colors.white),
+                  style: TextStyle(
+                    fontFamily: 'Cinzel',
+                    color: AppColors.foreground(context),
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3a602a),
@@ -229,13 +246,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Center(
               child: ElevatedButton.icon(
                 onPressed: _contattaSupporto,
-                icon: const Icon(Icons.mail_outline, color: Colors.white),
-                label: const Text(
+                icon: Icon(
+                  Icons.mail_outline,
+                  color: AppColors.foreground(context),
+                ),
+                label: Text(
                   'CONTATTA L’ASSISTENZA',
-                  style: TextStyle(fontFamily: 'Cinzel', color: Colors.white),
+                  style: TextStyle(
+                    fontFamily: 'Cinzel',
+                    color: AppColors.foreground(context),
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF91be7e),
+                  backgroundColor: AppColors.primary(context),
                   padding: const EdgeInsets.symmetric(
                     vertical: 12,
                     horizontal: 20,
