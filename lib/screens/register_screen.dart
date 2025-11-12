@@ -70,7 +70,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         photoUrl = await ref.getDownloadURL();
       }
 
-      // 4️⃣ Salva i dati su Firestore
+      // 4️⃣ Crea documento utente su Firestore (sempre)
       await firestore.collection('users').doc(uid).set({
         'uid': uid,
         'nome': _nomeController.text.trim(),
@@ -79,9 +79,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'email': _emailController.text.trim(),
         'photoUrl': photoUrl,
         'createdAt': FieldValue.serverTimestamp(),
-      });
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)); // ✅ merge: true per sicurezza
 
-      // 5️⃣ Aggiorna il profilo Firebase
+      // 5️⃣ Aggiorna profilo Firebase Auth
       await credential.user!.updateDisplayName(_usernameController.text.trim());
       if (photoUrl != null) {
         await credential.user!.updatePhotoURL(photoUrl);

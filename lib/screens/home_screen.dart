@@ -1,12 +1,21 @@
+// lib/screens/home_screen.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../widgets/bottom_navbar.dart';
 import 'package:occhio_al_borgo/theme/app_theme.dart';
+import 'package:occhio_al_borgo/services/user_sync_service.dart';
+import 'package:occhio_al_borgo/l10n/app_localizations.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,20 +25,53 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // ---- USER / UI STATE ----
   String? _username;
   File? _avatarFile;
+  bool _uploadingAvatar = false;
+
   String? _lastBorgoName;
   String? _lastBorgoDate;
   File? _lastBorgoPhoto;
-  List<Map<String, dynamic>> _upcomingEvents = [];
-  List<String> _unlockedBadges = [];
 
-  final picker = ImagePicker();
+  List<Map<String, dynamic>> _upcomingEvents = [];
+  List<Map<String, String>> _unlockedBadges = [];
+
+  final ImagePicker _picker = ImagePicker();
+  Timer? _autoSyncTimer;
 
   @override
   void initState() {
     super.initState();
     _loadAllData();
+    _syncUserData();
+
+    // sync automatico ogni 10'
+    _autoSyncTimer = Timer.periodic(const Duration(minutes: 10), (_) async {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🔄 Sincronizzazione automatica in corso...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      await _syncUserData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoSyncTimer?.cancel();
+    super.dispose();
+  }
+
+  // ---- SYNC / LOAD ----
+  Future<void> _syncUserData() async {
+    final data = await UserSyncService.syncUserData();
+    if (!mounted || data == null) return;
+    setState(() {
+      _username = data['username'] ?? _username;
+    });
   }
 
   Future<void> _loadAllData() async {
@@ -54,8 +96,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _lastBorgoName =
-          prefs.getString('last_borgo_name') ?? 'Nessun borgo riconosciuto';
-      _lastBorgoDate = prefs.getString('last_borgo_date');
+          prefs.getString('last_borgo_name') ?? 'Finalborgo (SV)'; // demo
+      _lastBorgoDate =
+          prefs.getString('last_borgo_date') ?? '2025-09-15T00:00:00'; // demo
       final photoPath = prefs.getString('last_borgo_photo');
       if (photoPath != null && File(photoPath).existsSync()) {
         _lastBorgoPhoto = File(photoPath);
@@ -63,14 +106,54 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Badge: accetta sia List<String> (ids) che demo locale
   Future<void> _loadBadges() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _unlockedBadges = prefs.getStringList('unlocked_badges') ?? [];
-    });
+    final saved = prefs.getStringList('unlocked_badges');
+
+    try {
+      if (saved != null && saved.isNotEmpty) {
+        setState(() {
+          _unlockedBadges = saved
+              .map(
+                (id) => {'id': id, 'title': _titleFromId(id), 'icon': 'star'},
+              )
+              .toList();
+        });
+      } else {
+        // demo
+        setState(() {
+          _unlockedBadges = [
+            {
+              'id': 'fotografa-locale',
+              'title': 'Fotografa Locale',
+              'icon': 'camera',
+            },
+            {'id': 'borgo-lover', 'title': 'Borgo Lover', 'icon': 'heart'},
+            {
+              'id': 'viaggiatrice-liguria',
+              'title': 'Viaggiatrice Liguria',
+              'icon': 'map-pin',
+            },
+            {'id': 'curiosona', 'title': 'Curiosona', 'icon': 'search'},
+          ];
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Errore caricamento badge: $e');
+    }
   }
 
-  // 🔹 CARICAMENTO EVENTI
+  String _titleFromId(String id) {
+    final map = {
+      'fotografa-locale': 'Fotografa Locale',
+      'borgo-lover': 'Borgo Lover',
+      'viaggiatrice-liguria': 'Viaggiatrice Liguria',
+      'curiosona': 'Curiosona',
+    };
+    return map[id] ?? id.replaceAll('-', ' ');
+  }
+
   Future<void> _loadEvents() async {
     try {
       final raw = await rootBundle.loadString(
@@ -80,8 +163,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final today = DateTime.now();
 
       final events = data
-          .map<Map<String, dynamic>>((ev) {
-            return {
+          .map<Map<String, dynamic>>(
+            (ev) => {
               'title': ev['data-page-selector'] ?? 'Evento',
               'date': ev['event_dates-0'] ?? ev['data'] ?? '',
               'img': ev['image-0-src'] ?? ev['image-src'] ?? '',
@@ -89,42 +172,55 @@ class _HomeScreenState extends State<HomeScreen> {
                   ev['data-page-selector-href'] ??
                   ev['web-scraper-start-url'] ??
                   '',
-            };
-          })
+            },
+          )
           .where((e) {
             final d = _parseDate(e['date']);
             return d != null && !d.isBefore(today);
           })
           .toList();
 
-      events.sort((a, b) {
-        final da = _parseDate(a['date']);
-        final db = _parseDate(b['date']);
-        return (da ?? today).compareTo(db ?? today);
-      });
-
-      setState(() {
-        _upcomingEvents = events.take(3).toList();
-      });
-
-      // Debug (puoi rimuovere dopo)
-      for (var e in _upcomingEvents) {
-        debugPrint('🗓 Evento: ${e['title']} - ${e['date']}');
+      if (events.isEmpty) {
+        _setDemoEvents();
+      } else {
+        setState(() => _upcomingEvents = events.take(3).toList());
       }
-    } catch (e) {
-      debugPrint('❌ Errore caricamento eventi: $e');
+    } catch (_) {
+      _setDemoEvents();
     }
   }
 
-  // 🔹 LETTURA DATE FLESSIBILE
+  void _setDemoEvents() {
+    setState(() {
+      _upcomingEvents = [
+        {
+          'title': 'Festa dell’Olio a Finalborgo',
+          'date': '15 Ottobre 2025',
+          'img': 'assets/images/demo1.jpg',
+          'url': '',
+        },
+        {
+          'title': 'Notte Medievale di Finalborgo',
+          'date': '2 Novembre 2025',
+          'img': 'assets/images/demo2.jpg',
+          'url': '',
+        },
+        {
+          'title': 'Mercatino dei Sapori Liguri',
+          'date': '10 Dicembre 2025',
+          'img': 'assets/images/demo3.jpg',
+          'url': '',
+        },
+      ];
+    });
+  }
+
   DateTime? _parseDate(String? dateStr) {
     if (dateStr == null || dateStr.trim().isEmpty) return null;
-
     final cleaned = dateStr.split('-').first.trim();
     final match = RegExp(
       r'(\d{1,2})(?:[\/\-\s]+)([A-Za-z]+|\d{1,2})(?:[\/\-\s]+)?(\d{2,4})?',
     ).firstMatch(cleaned);
-
     if (match == null) return null;
 
     const mesi = {
@@ -143,20 +239,66 @@ class _HomeScreenState extends State<HomeScreen> {
     };
 
     final giorno = int.tryParse(match.group(1) ?? '') ?? 1;
-    final meseStr = match.group(2)!.toLowerCase();
+    final meseStr = (match.group(2) ?? '').toLowerCase();
     final mese = mesi[meseStr] ?? int.tryParse(meseStr) ?? 1;
     var anno = int.tryParse(match.group(3) ?? '') ?? DateTime.now().year;
     if (anno < 100) anno += 2000;
-
     return DateTime(anno, mese, giorno);
   }
 
+  // ---- ACTIONS ----
   Future<void> _changeAvatar() async {
-    final XFile? img = await picker.pickImage(source: ImageSource.gallery);
+    final XFile? img = await _picker.pickImage(source: ImageSource.gallery);
     if (img == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('profile_avatar', img.path);
-    setState(() => _avatarFile = File(img.path));
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final File imageFile = File(img.path);
+    final uid = user.uid;
+
+    try {
+      setState(() => _uploadingAvatar = true);
+
+      // Upload su Storage
+      final ref = FirebaseStorage.instance.ref().child('avatars/$uid.jpg');
+      await ref.putFile(imageFile);
+      final newUrl = await ref.getDownloadURL();
+
+      // Aggiorna Firestore + profilo Firebase
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'photoUrl': newUrl,
+      });
+      await user.updatePhotoURL(newUrl);
+
+      // Persisti localmente
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('photoUrl', newUrl);
+      await prefs.setString('profile_avatar', img.path);
+
+      setState(() => _avatarFile = imageFile);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Foto profilo aggiornata!')),
+      );
+    } catch (e) {
+      debugPrint('Errore caricamento avatar: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('❌ Errore durante il caricamento')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
+  }
+
+  Future<void> _openEvent(String url) async {
+    if (url.isEmpty) return;
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   void _onNavTap(int index) {
@@ -178,14 +320,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _openEvent(String url) async {
-    if (await canLaunchUrl(Uri.parse(url))) {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    }
-  }
-
+  // ---- UI ----
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!; // ✅ non-null
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final Color topBarColor = isDark
         ? const Color(0xFF3a602a)
@@ -195,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: AppColors.background(context),
       appBar: AppBar(
         title: Text(
-          'Occhio al Borgo',
+          loc.appTitle,
           style: TextStyle(
             color: AppColors.foreground(context),
             fontFamily: 'Cinzel',
@@ -207,8 +345,8 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.settings, color: AppColors.foreground(context)),
-            tooltip: 'Impostazioni',
             onPressed: () => Navigator.pushNamed(context, '/settings'),
+            tooltip: 'Impostazioni',
           ),
         ],
       ),
@@ -216,6 +354,19 @@ class _HomeScreenState extends State<HomeScreen> {
         currentIndex: 0,
         onTap: _onNavTap,
         backgroundColor: topBarColor,
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.pushNamed(context, '/sos'),
+        backgroundColor: Colors.redAccent,
+        icon: const Icon(Icons.sos, color: Colors.white),
+        label: Text(
+          loc.helpRequest(),
+          style: const TextStyle(
+            fontFamily: 'Cinzel',
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -226,38 +377,50 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // 👤 Avatar
+                  // ---- AVATAR ----
                   GestureDetector(
-                    onTap: _changeAvatar,
-                    child: CircleAvatar(
-                      radius: 50,
-                      backgroundColor: AppColors.primary(context),
-                      backgroundImage: _avatarFile != null
-                          ? FileImage(_avatarFile!)
-                          : null,
-                      child: _avatarFile == null
-                          ? Icon(
-                              Icons.person,
-                              color: AppColors.foreground(context),
-                              size: 50,
-                            )
-                          : null,
+                    onTap: _uploadingAvatar ? null : _changeAvatar,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 50,
+                          backgroundColor: AppColors.primary(context),
+                          backgroundImage: _avatarFile != null
+                              ? FileImage(_avatarFile!)
+                              : null,
+                          child: _avatarFile == null
+                              ? Icon(
+                                  Icons.person,
+                                  color: AppColors.foreground(context),
+                                  size: 50,
+                                )
+                              : null,
+                        ),
+                        if (_uploadingAvatar)
+                          const SizedBox(
+                            width: 100,
+                            height: 100,
+                            child: CircularProgressIndicator(strokeWidth: 3),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Bentornata, ${_username ?? "Utente"}!',
+                    loc.homeWelcome(_username ?? 'Utente'),
                     style: TextStyle(
                       fontFamily: 'Cinzel',
                       fontSize: 22,
                       color: AppColors.foreground(context),
                     ),
                   ),
+
                   const SizedBox(height: 30),
 
-                  // 📍 Ultimo borgo
+                  // ---- ULTIMO BORGO ----
                   Text(
-                    'Ultimo borgo visitato',
+                    loc.lastBorgo,
                     style: TextStyle(
                       fontFamily: 'Cinzel',
                       fontSize: 18,
@@ -276,7 +439,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             fit: BoxFit.cover,
                           )
                         : Image.asset(
-                            'assets/images/borgo_placeholder.png',
+                            'assets/images/demo1.jpg',
                             width: 200,
                             height: 200,
                             fit: BoxFit.cover,
@@ -284,9 +447,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _lastBorgoDate != null
-                        ? 'Visitato il ${_lastBorgoDate!.split("T").first}'
-                        : 'Data non disponibile',
+                    (_lastBorgoDate != null
+                            ? 'Visitato il ${_lastBorgoDate!.split("T").first}'
+                            : 'Visitato il 2025-09-15')
+                        .toString(),
                     style: TextStyle(
                       fontFamily: 'Cormorant',
                       fontSize: 14,
@@ -294,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   Text(
-                    _lastBorgoName ?? 'Nome borgo sconosciuto',
+                    _lastBorgoName ?? 'Finalborgo (SV)',
                     style: TextStyle(
                       fontFamily: 'Cinzel',
                       fontSize: 18,
@@ -303,7 +467,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
                   ElevatedButton(
                     onPressed: () => Navigator.pushNamed(context, '/scatta'),
                     style: ElevatedButton.styleFrom(
@@ -316,20 +479,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: const Text(
-                      'SCATTA UN NUOVO BORGO',
-                      style: TextStyle(
+                    child: Text(
+                      loc.takePhoto,
+                      style: const TextStyle(
                         fontFamily: 'Cinzel',
                         color: Colors.white,
                         fontSize: 14,
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 30),
 
-                  // 🏅 Badge
+                  // ---- BADGE ----
                   Text(
-                    'Badge ottenuti',
+                    loc.badgesTitle,
                     style: TextStyle(
                       fontFamily: 'Cinzel',
                       fontSize: 18,
@@ -338,161 +502,151 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _unlockedBadges.isNotEmpty
-                      ? Wrap(
-                          alignment: WrapAlignment.center,
-                          spacing: 20,
-                          runSpacing: 16,
-                          children: _unlockedBadges.map((b) {
-                            return Column(
-                              children: [
-                                Container(
-                                  width: 70,
-                                  height: 70,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary(context),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.star,
-                                    color: AppColors.foreground(context),
-                                    size: 32,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                SizedBox(
-                                  width: 90,
-                                  child: Text(
-                                    b,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontFamily: 'Cormorant',
-                                      fontSize: 13,
-                                      color: AppColors.foreground(context),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                          }).toList(),
-                        )
-                      : Text(
-                          'Nessun badge ancora sbloccato.\nContinua ad esplorare!',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Cormorant',
-                            fontSize: 15,
-                            color: AppColors.subtext(context),
-                            fontStyle: FontStyle.italic,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 20,
+                    runSpacing: 16,
+                    children: _unlockedBadges.map((b) {
+                      return Column(
+                        children: [
+                          Container(
+                            width: 70,
+                            height: 70,
+                            decoration: BoxDecoration(
+                              color: AppColors.primary(context),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.star,
+                              color: AppColors.foreground(context),
+                              size: 32,
+                            ),
                           ),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            width: 100,
+                            child: Text(
+                              b['title'] ?? '',
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: 'Cormorant',
+                                fontSize: 13,
+                                color: AppColors.foreground(context),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  // ---- EVENTI ----
+                  Text(
+                    loc.eventsTitle,
+                    style: TextStyle(
+                      fontFamily: 'Cinzel',
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.foreground(context),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Column(
+                    children: _upcomingEvents.map((e) {
+                      return Card(
+                        color: AppColors.card(context),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                  const SizedBox(height: 30),
-
-                  // 📅 Eventi
-                  Text(
-                    'Eventi in arrivo',
-                    style: TextStyle(
-                      fontFamily: 'Cinzel',
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.foreground(context),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  TextButton.icon(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/segnala_evento'),
-                    icon: Icon(
-                      Icons.add_circle_outline,
-                      color: AppColors.accent(context),
-                    ),
-                    label: Text(
-                      'Segnala un evento',
-                      style: TextStyle(
-                        fontFamily: 'Cinzel',
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.accent(context),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-                  if (_upcomingEvents.isEmpty)
-                    Text(
-                      'Nessun evento disponibile al momento.',
-                      style: TextStyle(
-                        fontFamily: 'Cormorant',
-                        fontSize: 14,
-                        color: AppColors.subtext(context),
-                      ),
-                    )
-                  else
-                    Column(
-                      children: _upcomingEvents.map((e) {
-                        return GestureDetector(
-                          onTap: () => _openEvent(e['url']),
-                          child: Card(
-                            color: AppColors.card(context),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            elevation: 3,
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: Row(
-                              children: [
-                                if (e['img'] != null && e['img'].isNotEmpty)
-                                  ClipRRect(
-                                    borderRadius: const BorderRadius.horizontal(
-                                      left: Radius.circular(10),
-                                    ),
-                                    child: Image.network(
-                                      e['img'],
-                                      width: 90,
-                                      height: 90,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(10),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          e['title'],
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontFamily: 'Cinzel',
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.foreground(
-                                              context,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          e['date'],
-                                          style: TextStyle(
-                                            fontFamily: 'Cormorant',
-                                            fontSize: 13,
-                                            color: AppColors.subtext(context),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                        elevation: 3,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            if ((e['img'] ?? '').toString().isNotEmpty)
+                              ClipRRect(
+                                borderRadius: const BorderRadius.horizontal(
+                                  left: Radius.circular(10),
                                 ),
-                              ],
+                                child:
+                                    (e['img'] as String).startsWith('assets/')
+                                    ? Image.asset(
+                                        e['img'],
+                                        width: 90,
+                                        height: 90,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Image.network(
+                                        e['img'],
+                                        width: 90,
+                                        height: 90,
+                                        fit: BoxFit.cover,
+                                      ),
+                              ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      e['title'] ?? '',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontFamily: 'Cinzel',
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.foreground(context),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      e['date'] ?? '',
+                                      style: TextStyle(
+                                        fontFamily: 'Cormorant',
+                                        fontSize: 13,
+                                        color: AppColors.subtext(context),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    ElevatedButton(
+                                      onPressed: () =>
+                                          _openEvent(e['url'] ?? ''),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.accent(
+                                          context,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 10,
+                                          horizontal: 20,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'SCOPRI DI PIÙ',
+                                        style: TextStyle(
+                                          fontFamily: 'Cinzel',
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ],
               ),
             ),

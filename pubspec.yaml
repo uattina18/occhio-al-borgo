@@ -10,12 +10,20 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  share_plus: ^10.0.0
+  screenshot: ^3.0.0
 
-  # 🔥 Firebase
+  # 🌍 Localizzazione e internazionalizzazione (usiamo file .dart, non .arb)
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+
+  # 🔥 Firebase (compatibili e stabili)
   firebase_core: ^4.2.0
   firebase_auth: ^6.1.1
   cloud_firestore: ^6.0.3
   firebase_storage: ^13.0.3
+  cloud_functions: ^6.0.0
 
   # 📂 Gestione file locali
   path_provider: ^2.1.4
@@ -47,6 +55,7 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.4
 
 flutter:
+  # 🚫 Disabilita la generazione automatica .arb
   uses-material-design: true
 
   assets:
@@ -56,6 +65,9 @@ flutter:
     - assets/data/eventi_liguria.json
     - assets/data/borghi_min.json
     - assets/data/badges.json
+    - assets/images/demo1.jpg
+    - assets/images/demo2.jpg
+    - assets/images/demo3.jpg
 
   fonts:
     - family: Cinzel

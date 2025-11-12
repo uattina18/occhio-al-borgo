@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:occhio_al_borgo/theme/app_theme.dart';
@@ -32,11 +33,22 @@ class _LoginScreenState extends State<LoginScreen> {
       final prefs = await SharedPreferences.getInstance();
       final savedEmail = prefs.getString('email');
 
-      // Attendi che Firebase sia pronto
       await Future.delayed(const Duration(milliseconds: 500));
       final user = _auth.currentUser;
 
       if (user != null && savedEmail != null && mounted) {
+        // ✅ Aggiorna i dati locali da Firestore se l’utente è già loggato
+        final uid = user.uid;
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
+        if (userDoc.exists) {
+          final data = userDoc.data()!;
+          await prefs.setString('username', data['username'] ?? '');
+          await prefs.setString('email', data['email'] ?? user.email ?? '');
+        }
+
         WidgetsBinding.instance.addPostFrameCallback((_) {
           Navigator.pushReplacementNamed(context, '/home');
         });
@@ -61,6 +73,23 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('email', _emailController.text.trim());
       } else {
         await prefs.remove('email');
+      }
+
+      // ✅ Recupera i dati aggiornati da Firestore
+      final uid = credential.user?.uid;
+      if (uid != null) {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
+        if (userDoc.exists) {
+          final data = userDoc.data()!;
+          await prefs.setString('username', data['username'] ?? '');
+          await prefs.setString(
+            'email',
+            data['email'] ?? credential.user?.email ?? '',
+          );
+        }
       }
 
       if (credential.user != null && mounted) {
@@ -97,7 +126,6 @@ class _LoginScreenState extends State<LoginScreen> {
       final localAuth = LocalAuthentication();
       final didAuthenticate = await localAuth.authenticate(
         localizedReason: 'Autenticati per accedere',
-        // NIENTE options qui
       );
 
       if (didAuthenticate) {
@@ -139,18 +167,21 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // Titolo principale
                   Text(
                     'OCCHIO AL BORGO',
                     style: TextStyle(
                       fontFamily: 'Cinzel',
                       fontSize: 22,
-                      color: AppColors.foreground(context),
+                      color: AppColors.white,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
                     ),
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: isKeyboardVisible ? 10 : 20),
+
+                  // Logo
                   SizedBox(
                     width: isKeyboardVisible ? 70 : 100,
                     height: isKeyboardVisible ? 70 : 100,
@@ -168,7 +199,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: AppColors.card(context).withValues(alpha: 0.9),
-
                       hintText: 'Email',
                       hintStyle: TextStyle(
                         color: AppColors.subtext(context),
@@ -190,7 +220,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: AppColors.card(context).withValues(alpha: 0.9),
-
                       hintText: 'Password',
                       hintStyle: TextStyle(
                         color: AppColors.subtext(context),
@@ -223,12 +252,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         value: _rememberMe,
                         onChanged: (v) =>
                             setState(() => _rememberMe = v ?? false),
-                        activeColor: const Color(0xFF91be7e),
+                        activeColor: AppColors.primary(context),
                       ),
                       Text(
                         'Rimani connesso',
                         style: TextStyle(
-                          color: AppColors.foreground(context),
+                          color: AppColors.white,
                           fontFamily: 'Cormorant',
                           fontSize: 16,
                         ),
@@ -239,15 +268,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Pulsanti
                   _isLoading
-                      ? CircularProgressIndicator(
-                          color: AppColors.foreground(context),
-                        )
+                      ? CircularProgressIndicator(color: AppColors.white)
                       : Column(
                           children: [
                             ElevatedButton(
                               onPressed: _login,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF3a602a),
+                                backgroundColor: AppColors.accent(context),
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 14,
                                   horizontal: 60,
@@ -259,7 +286,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: Text(
                                 'ACCEDI',
                                 style: TextStyle(
-                                  color: AppColors.foreground(context),
+                                  color: AppColors.white,
                                   fontFamily: 'Cinzel',
                                   fontSize: 16,
                                 ),
@@ -270,20 +297,18 @@ class _LoginScreenState extends State<LoginScreen> {
                               onPressed: _loginWithBiometric,
                               icon: Icon(
                                 Icons.fingerprint,
-                                color: AppColors.foreground(context),
+                                color: AppColors.white,
                               ),
                               label: Text(
                                 'Accedi con impronta',
                                 style: TextStyle(
-                                  color: AppColors.foreground(context),
+                                  color: AppColors.white,
                                   fontFamily: 'Cinzel',
                                   fontSize: 16,
                                 ),
                               ),
                               style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                  color: AppColors.foreground(context),
-                                ),
+                                side: BorderSide(color: AppColors.white),
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 12,
                                   horizontal: 40,
@@ -294,15 +319,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                   const SizedBox(height: 20),
 
+                  // Registrati
                   TextButton(
                     onPressed: () =>
                         Navigator.pushReplacementNamed(context, '/register'),
                     child: Text(
                       'Non hai un account? Registrati',
                       style: TextStyle(
-                        color: AppColors.foreground(context),
+                        color: AppColors.white,
                         fontFamily: 'Cormorant',
-                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
                         decoration: TextDecoration.underline,
                       ),
                     ),

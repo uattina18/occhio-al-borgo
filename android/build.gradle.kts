@@ -1,11 +1,26 @@
-// ✅ Aggiungi questo blocco in cima
-plugins {
-    // Plugin Google Services per Firebase
-    id("com.google.gms.google-services") version "4.3.15" apply false
+// File: android/build.gradle.kts
 
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // ✅ Sintassi corretta per Kotlin DSL
+        classpath("com.google.gms:google-services:4.4.2")
+        classpath("com.android.tools.build:gradle:8.3.2")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22")
+    }
 }
 
-// 🔽 Il resto del tuo file rimane invariato
+plugins {
+    id("com.android.application") apply false
+    id("com.android.library") apply false
+    id("org.jetbrains.kotlin.android") apply false
+    id("com.google.gms.google-services") apply false
+}
+
+
 allprojects {
     repositories {
         google()
@@ -13,16 +28,17 @@ allprojects {
     }
 }
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+// 🔧 Gestione personalizzata della cartella build
+val newBuildDir = rootProject.layout.buildDirectory
+    .dir("../../build")
+    .get()
+rootProject.layout.buildDirectory.set(newBuildDir)
 
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
+    val newSubprojectBuildDir = newBuildDir.dir(project.name)
+    project.layout.buildDirectory.set(newSubprojectBuildDir)
 }
+
 subprojects {
     project.evaluationDependsOn(":app")
 }

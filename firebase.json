@@ -1,1 +1,42 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"occhioalborgo","appId":"1:674944716667:android:ee401a54f6fd8e171f37de","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"occhioalborgo","configurations":{"android":"1:674944716667:android:ee401a54f6fd8e171f37de","ios":"1:674944716667:ios:356707fde5620be41f37de","macos":"1:674944716667:ios:356707fde5620be41f37de","web":"1:674944716667:web:def6c8dea02b8efb1f37de","windows":"1:674944716667:web:b7d8ef5cac1e61fe1f37de"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "occhioalborgo",
+          "appId": "1:674944716667:android:ee401a54f6fd8e171f37de",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "occhioalborgo",
+          "configurations": {
+            "android": "1:674944716667:android:ee401a54f6fd8e171f37de",
+            "ios": "1:674944716667:ios:356707fde5620be41f37de",
+            "macos": "1:674944716667:ios:356707fde5620be41f37de",
+            "web": "1:674944716667:web:def6c8dea02b8efb1f37de",
+            "windows": "1:674944716667:web:b7d8ef5cac1e61fe1f37de"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ]
+}

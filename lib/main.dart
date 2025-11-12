@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:occhio_al_borgo/screens/segnala_evento_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+
+// 🌍 Localizzazione
+import 'package:occhio_al_borgo/l10n/app_localizations.dart';
 
 // Screens
 import 'screens/login_screen.dart';
@@ -18,6 +20,13 @@ import 'screens/borghi_visitati_screen.dart';
 import 'screens/community_screen.dart';
 import 'screens/galleria_screen.dart';
 import 'screens/borghi_detail_screen.dart';
+import 'screens/invita_amico_screen.dart';
+import 'screens/modifica_dati_screen.dart';
+import 'screens/segnala_evento_screen.dart';
+import 'screens/chat_screen.dart';
+import 'screens/borghi_riconosciuti_screen.dart';
+import 'screens/foto_borgo_screen.dart';
+import 'screens/sos_screen.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -33,19 +42,24 @@ Future<void> main() async {
     debugPrint('⚠️ Firebase non inizializzato: $e');
   }
 
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final isDark = prefs.getBool('dark_theme') ?? false;
-    runApp(OcchioAlBorgoApp(isDarkTheme: isDark));
-  } catch (e) {
-    debugPrint('⚠️ SharedPreferences non accessibili: $e');
-    runApp(const OcchioAlBorgoApp(isDarkTheme: false));
-  }
+  final prefs = await SharedPreferences.getInstance();
+  final isDark = prefs.getBool('dark_theme') ?? false;
+  final savedLocale = prefs.getString('locale') ?? 'it';
+
+  runApp(
+    OcchioAlBorgoApp(isDarkTheme: isDark, initialLocale: Locale(savedLocale)),
+  );
 }
 
 class OcchioAlBorgoApp extends StatefulWidget {
   final bool isDarkTheme;
-  const OcchioAlBorgoApp({super.key, required this.isDarkTheme});
+  final Locale initialLocale;
+
+  const OcchioAlBorgoApp({
+    super.key,
+    required this.isDarkTheme,
+    required this.initialLocale,
+  });
 
   @override
   State<OcchioAlBorgoApp> createState() => _OcchioAlBorgoAppState();
@@ -53,11 +67,13 @@ class OcchioAlBorgoApp extends StatefulWidget {
 
 class _OcchioAlBorgoAppState extends State<OcchioAlBorgoApp> {
   late bool _isDarkTheme;
+  late Locale _locale;
 
   @override
   void initState() {
     super.initState();
     _isDarkTheme = widget.isDarkTheme;
+    _locale = widget.initialLocale;
   }
 
   void _toggleTheme(bool value) async {
@@ -66,20 +82,40 @@ class _OcchioAlBorgoAppState extends State<OcchioAlBorgoApp> {
     setState(() => _isDarkTheme = value);
   }
 
+  void _changeLanguage(Locale locale) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('locale', locale.languageCode);
+    setState(() => _locale = locale);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Occhio al Borgo',
       debugShowCheckedModeBanner: false,
+
+      // 🌍 Localizzazione
+      locale: _locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      localeResolutionCallback: (deviceLocale, supported) {
+        if (deviceLocale == null) return const Locale('it');
+        for (final l in supported) {
+          if (l.languageCode == deviceLocale.languageCode) return l;
+        }
+        return const Locale('it');
+      },
+
       theme: _lightTheme,
       darkTheme: _darkTheme,
       themeMode: _isDarkTheme ? ThemeMode.dark : ThemeMode.light,
       initialRoute: '/login',
+
       routes: {
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
         '/home': (context) => const HomeScreen(),
-        '/scatta': (context) => ScattaScreen(),
+        '/scatta': (context) => const ScattaScreen(),
         '/explore': (context) => const ExploreScreen(),
         '/notifiche': (context) => const NotificheScreen(),
         '/profilo': (context) => const ProfiloScreen(),
@@ -91,80 +127,52 @@ class _OcchioAlBorgoAppState extends State<OcchioAlBorgoApp> {
             final isDark = mode == ThemeMode.dark;
             _toggleTheme(isDark);
           },
+          onLanguageChanged: _changeLanguage,
+          currentLocale: _locale,
         ),
         '/borghi_salvati': (context) => const BorghiSalvatiScreen(),
         '/borghi_visitati': (context) => const BorghiVisitatiScreen(),
         '/borghi_detail': (context) =>
             const BorgoDetailScreen(id: '', name: '', region: ''),
-        '/segnala_evento_screen': (context) => const SegnalaEventoScreen(),
+        '/segnala_evento': (context) => const SegnalaEventoScreen(),
+        '/invita_amico': (context) => const InvitaAmicoScreen(),
+        '/modifica_dati': (context) => const ModificaDatiScreen(),
+        '/sos': (context) => const SosScreen(),
+        '/borghi_riconosciuti': (context) => const BorghiRiconosciutiScreen(),
+        '/chat': (context) {
+          final args =
+              ModalRoute.of(context)!.settings.arguments
+                  as Map<String, dynamic>;
+          return ChatScreen(
+            chatId: args['chatId'],
+            otherUsername: args['username'],
+          );
+        },
+        '/foto_borgo': (context) {
+          final args = ModalRoute.of(context)!.settings.arguments;
+          String borgoName = 'Borgo';
+          if (args is String) {
+            borgoName = args;
+          } else if (args is Map && args['borgoName'] is String) {
+            borgoName = args['borgoName'];
+          }
+          return FotoBorgoScreen(borgoName: borgoName);
+        },
       },
     );
   }
 }
 
-// 🌤️ Tema chiaro
 final ThemeData _lightTheme = ThemeData(
   brightness: Brightness.light,
   primaryColor: const Color(0xFF91be7e),
   scaffoldBackgroundColor: const Color(0xFFe8e9ea),
   fontFamily: 'Cinzel',
-  appBarTheme: const AppBarTheme(
-    backgroundColor: Color(0xFF91be7e),
-    titleTextStyle: TextStyle(
-      fontFamily: 'Cinzel',
-      fontSize: 20,
-      color: Colors.white,
-      fontWeight: FontWeight.bold,
-    ),
-    iconTheme: IconThemeData(color: Colors.white),
-  ),
-  colorScheme: ColorScheme.fromSeed(
-    seedColor: Color(0xFF91be7e),
-    brightness: Brightness.light,
-  ),
 );
 
-// 🌙 Tema scuro
 final ThemeData _darkTheme = ThemeData(
   brightness: Brightness.dark,
   primaryColor: const Color(0xFF91be7e),
   scaffoldBackgroundColor: const Color(0xFF1C1C1E),
   fontFamily: 'Cinzel',
-  appBarTheme: const AppBarTheme(
-    backgroundColor: Color(0xFF3A602A),
-    titleTextStyle: TextStyle(
-      fontFamily: 'Cinzel',
-      fontSize: 20,
-      color: Colors.white,
-      fontWeight: FontWeight.bold,
-    ),
-    iconTheme: IconThemeData(color: Colors.white),
-  ),
-  colorScheme: const ColorScheme.dark(
-    primary: Color(0xFF91be7e),
-    secondary: Color(0xFF3a602a),
-    surface: Color(0xFF2C2C2E),
-    onSurface: Colors.white,
-    onBackground: Colors.white,
-  ),
-  textTheme: const TextTheme(
-    bodyLarge: TextStyle(color: Colors.white),
-    bodyMedium: TextStyle(color: Colors.white70),
-    titleLarge: TextStyle(color: Colors.white),
-    titleMedium: TextStyle(color: Colors.white70),
-  ),
-  cardColor: const Color(0xFF2C2C2E),
-  dividerColor: Colors.white24,
-  switchTheme: SwitchThemeData(
-    thumbColor: WidgetStateProperty.resolveWith(
-      (states) => states.contains(WidgetState.selected)
-          ? const Color(0xFF91be7e)
-          : Colors.grey,
-    ),
-    trackColor: WidgetStateProperty.resolveWith(
-      (states) => states.contains(WidgetState.selected)
-          ? const Color(0xFF577C4C)
-          : Colors.white30,
-    ),
-  ),
 );
