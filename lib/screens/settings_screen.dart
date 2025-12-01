@@ -97,9 +97,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Errore durante il logout')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Errore durante il logout')));
     }
   }
 
@@ -109,65 +109,107 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Impostazioni'),
+        title: const Text(
+          'Impostazioni',
+          style: TextStyle(fontFamily: 'Cinzel'),
+        ),
         backgroundColor: const Color(0xFF91be7e),
         centerTitle: true,
       ),
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: AppColors.background(context),
       bottomNavigationBar: CustomBottomNavBar(
         currentIndex: _currentIndex,
         onTap: _onNavTap,
       ),
       body: SafeArea(
-        child: ListView(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-          children: [
-            const Text('Tema', style: TextStyle(fontFamily: 'Cinzel', fontSize: 18)),
-            const SizedBox(height: 12),
-            _buildThemeOption(ThemeMode.light, 'Chiaro', Icons.wb_sunny),
-            _buildThemeOption(ThemeMode.dark, 'Scuro', Icons.dark_mode),
-            _buildThemeOption(ThemeMode.system, 'Sistema', Icons.phone_android),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Tema',
+                style: TextStyle(fontFamily: 'Cinzel', fontSize: 18),
+              ),
+              const SizedBox(height: 12),
+              _buildThemeOption(ThemeMode.light, 'Chiaro', Icons.wb_sunny),
+              _buildThemeOption(ThemeMode.dark, 'Scuro', Icons.dark_mode),
+              _buildThemeOption(
+                ThemeMode.system,
+                'Sistema',
+                Icons.phone_android,
+              ),
 
-            const SizedBox(height: 30),
-            const Text('Lingua', style: TextStyle(fontFamily: 'Cinzel', fontSize: 18)),
-            const SizedBox(height: 12),
-            _buildLanguageOption(const Locale('it'), 'Italiano', Icons.flag),
-            _buildLanguageOption(const Locale('en'), 'English', Icons.language),
+              const SizedBox(height: 30),
+              const Text(
+                'Lingua',
+                style: TextStyle(fontFamily: 'Cinzel', fontSize: 18),
+              ),
+              const SizedBox(height: 12),
+              _buildLanguageOption(const Locale('it'), 'Italiano', Icons.flag),
+              _buildLanguageOption(
+                const Locale('en'),
+                'English',
+                Icons.language,
+              ),
 
-            const SizedBox(height: 30),
-            const Text('Notifiche', style: TextStyle(fontFamily: 'Cinzel', fontSize: 18)),
-            const SizedBox(height: 12),
-            ListTile(
-              leading: const Icon(Icons.notifications_active_outlined),
-              title: const Text('Notifiche attive', style: TextStyle(fontFamily: 'Cormorant', fontSize: 16)),
-              trailing: Switch.adaptive(value: _notificationsEnabled, onChanged: _toggleNotifications),
-            ),
-
-            const SizedBox(height: 30),
-            const Text('Debug', style: TextStyle(fontFamily: 'Cinzel', fontSize: 18)),
-            const SizedBox(height: 12),
-            ListTile(
-              leading: const Icon(Icons.bug_report_outlined),
-              title: const Text('Mostra log sincronizzazione', style: TextStyle(fontFamily: 'Cormorant', fontSize: 16)),
-              trailing: Switch.adaptive(value: _showSyncLogs, onChanged: _toggleSyncLogs),
-            ),
-
-            const SizedBox(height: 40),
-            Center(
-              child: ElevatedButton.icon(
-                onPressed: _logout,
-                icon: const Icon(Icons.logout, color: Colors.white),
-                label: const Text(
-                  'Logout',
-                  style: TextStyle(fontFamily: 'Cinzel', color: Colors.white),
+              const SizedBox(height: 30),
+              const Text(
+                'Notifiche',
+                style: TextStyle(fontFamily: 'Cinzel', fontSize: 18),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.notifications_active_outlined),
+                title: const Text(
+                  'Notifiche attive',
+                  style: TextStyle(fontFamily: 'Cormorant', fontSize: 16),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3a602a),
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+                trailing: Switch.adaptive(
+                  value: _notificationsEnabled,
+                  onChanged: _toggleNotifications,
                 ),
               ),
-            ),
-          ],
+
+              const SizedBox(height: 30),
+              const Text(
+                'Debug',
+                style: TextStyle(fontFamily: 'Cinzel', fontSize: 18),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.bug_report_outlined),
+                title: const Text(
+                  'Mostra log sincronizzazione',
+                  style: TextStyle(fontFamily: 'Cormorant', fontSize: 16),
+                ),
+                trailing: Switch.adaptive(
+                  value: _showSyncLogs,
+                  onChanged: _toggleSyncLogs,
+                ),
+              ),
+
+              const SizedBox(height: 40),
+              Center(
+                child: ElevatedButton.icon(
+                  onPressed: _logout,
+                  icon: const Icon(Icons.logout, color: Colors.white),
+                  label: const Text(
+                    'Logout',
+                    style: TextStyle(fontFamily: 'Cinzel', color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3a602a),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -178,13 +220,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return RadioListTile<ThemeMode>(
       value: mode,
       groupValue: _selectedMode,
-      onChanged: (value) => _changeMode(value!),
+      onChanged: (value) {
+        if (value != null) _changeMode(value);
+      },
       activeColor: theme.primaryColor,
       title: Row(
         children: [
           Icon(icon, color: theme.iconTheme.color),
           const SizedBox(width: 10),
-          Text(label, style: const TextStyle(fontFamily: 'Cormorant', fontSize: 16)),
+          Text(
+            label,
+            style: const TextStyle(fontFamily: 'Cormorant', fontSize: 16),
+          ),
         ],
       ),
     );
@@ -203,7 +250,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Icon(icon, color: theme.iconTheme.color),
           const SizedBox(width: 10),
-          Text(label, style: const TextStyle(fontFamily: 'Cormorant', fontSize: 16)),
+          Text(
+            label,
+            style: const TextStyle(fontFamily: 'Cormorant', fontSize: 16),
+          ),
         ],
       ),
     );

@@ -140,7 +140,6 @@ class _CommunityScreenState extends State<CommunityScreen> {
   Future<void> _showLikesModal(List likedBy) async {
     if (likedBy.isEmpty) return;
 
-    // Fetch usernames (batch)
     final futures = likedBy.map(
       (uid) => _firestore.collection('users').doc(uid).get(),
     );
@@ -425,95 +424,95 @@ class _CommunityScreenState extends State<CommunityScreen> {
       },
     ];
 
-    return ListView.builder(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      itemCount: demos.length,
-      itemBuilder: (_, i) {
-        final d = demos[i];
-        return Card(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          elevation: 3,
-          margin: const EdgeInsets.only(bottom: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(10),
+      child: Column(
+        children: demos.map((d) {
+          return Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            elevation: 3,
+            margin: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(10),
+                  ),
+                  child: Image.asset(
+                    d['asset']!,
+                    width: double.infinity,
+                    height: 220,
+                    fit: BoxFit.cover,
+                  ),
                 ),
-                child: Image.asset(
-                  d['asset']!,
-                  width: double.infinity,
-                  height: 220,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      d['title']!,
-                      style: const TextStyle(
-                        fontFamily: 'Cinzel',
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        d['title']!,
+                        style: const TextStyle(
+                          fontFamily: 'Cinzel',
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'di ${d['username']}',
-                      style: TextStyle(
-                        fontFamily: 'Cormorant',
-                        fontSize: 14,
-                        color: AppColors.subtext(context),
+                      const SizedBox(height: 4),
+                      Text(
+                        'di ${d['username']}',
+                        style: TextStyle(
+                          fontFamily: 'Cormorant',
+                          fontSize: 14,
+                          color: AppColors.subtext(context),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          '0 like',
-                          style: TextStyle(
-                            fontFamily: 'Cormorant',
-                            fontSize: 14,
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '0 like',
+                            style: TextStyle(
+                              fontFamily: 'Cormorant',
+                              fontSize: 14,
+                            ),
                           ),
-                        ),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.favorite_border),
-                              onPressed: () {},
-                              tooltip: 'Mi piace (demo)',
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.mode_comment_outlined),
-                              onPressed: () {},
-                              tooltip: 'Commenta (demo)',
-                            ),
-                            PopupMenuButton<String>(
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                  value: 'amico',
-                                  child: Text('Aggiungi amico'),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.favorite_border),
+                                onPressed: () {},
+                                tooltip: 'Mi piace (demo)',
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.mode_comment_outlined),
+                                onPressed: () {},
+                                tooltip: 'Commenta (demo)',
+                              ),
+                              PopupMenuButton<String>(
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'amico',
+                                    child: Text('Aggiungi amico'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 
@@ -524,214 +523,234 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Community'),
+        title: const Text('Community', style: TextStyle(fontFamily: 'Cinzel')),
         backgroundColor: const Color(0xFF91be7e),
         centerTitle: true,
       ),
       backgroundColor: const Color(0xFFe8e9ea),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore
-            .collection('posts')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          // Se non ci sono post reali, mostra solo la DEMO
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return _demoList();
-          }
-
-          final posts = snapshot.data!.docs;
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: posts.length,
-            itemBuilder: (context, i) {
-              final post = posts[i];
-              final data = post.data() as Map<String, dynamic>;
-              final postOwnerId = data['uid'];
-              final isMine = postOwnerId == uid;
-              final likes = (data['likes'] ?? 0) as int;
-              final List likedBy = List.from(data['likedBy'] ?? []);
-              final youLike = uid != null && likedBy.contains(uid);
-
-              // Filtra utenti bloccati
-              if (_blockedUsers.contains(postOwnerId)) {
-                return const SizedBox.shrink();
-              }
-
-              // testo “Piace a …”
-              Widget likesSummary() {
-                if (likes == 0) {
-                  return const Text(
-                    '0 like',
-                    style: TextStyle(fontFamily: 'Cormorant', fontSize: 14),
-                  );
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _firestore
+                  .collection('posts')
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
                 }
 
-                // Mostra fino a 2 nomi, poi “altri”
-                final shownUids = likedBy.take(2).toList();
-                return FutureBuilder<List<DocumentSnapshot>>(
-                  future: Future.wait(
-                    shownUids.map(
-                      (id) => _firestore.collection('users').doc(id).get(),
-                    ),
-                  ),
-                  builder: (_, snap) {
-                    String label = '$likes like';
-                    if (snap.hasData && snap.data!.isNotEmpty) {
-                      final names = snap.data!
-                          .map(
-                            (d) =>
-                                (d.data()
-                                    as Map<String, dynamic>?)?['username'] ??
-                                'Utente',
-                          )
-                          .cast<String>()
-                          .toList();
-                      if (names.length == 1) {
-                        label = 'Piace a ${names[0]}';
-                      } else if (names.length >= 2) {
-                        final others = likes - 2;
-                        label = others > 0
-                            ? 'Piace a ${names[0]}, ${names[1]} e altri $others'
-                            : 'Piace a ${names[0]} e ${names[1]}';
-                      }
-                    }
-                    return InkWell(
-                      onTap: () => _showLikesModal(likedBy),
-                      child: Text(
-                        label,
-                        style: const TextStyle(
-                          fontFamily: 'Cormorant',
-                          fontSize: 14,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    );
-                  },
-                );
-              }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  // solo DEMO
+                  return _demoList();
+                }
 
-              return Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                elevation: 3,
-                margin: const EdgeInsets.only(bottom: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (data['imageUrl'] != null)
-                      ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(10),
-                        ),
-                        child: Image.network(
-                          data['imageUrl'],
-                          width: double.infinity,
-                          height: 220,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            data['title'] ?? 'Senza titolo',
-                            style: const TextStyle(
-                              fontFamily: 'Cinzel',
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'di ${data['username'] ?? 'Anonimo'}',
+                final posts = snapshot.data!.docs;
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: posts.map((post) {
+                      final data = post.data() as Map<String, dynamic>;
+                      final postOwnerId = data['uid'];
+                      final isMine = postOwnerId == uid;
+                      final likes = (data['likes'] ?? 0) as int;
+                      final List likedBy = List.from(data['likedBy'] ?? []);
+                      final youLike = uid != null && likedBy.contains(uid);
+
+                      if (_blockedUsers.contains(postOwnerId)) {
+                        return const SizedBox.shrink();
+                      }
+
+                      Widget likesSummary() {
+                        if (likes == 0) {
+                          return const Text(
+                            '0 like',
                             style: TextStyle(
                               fontFamily: 'Cormorant',
                               fontSize: 14,
-                              color: AppColors.subtext(context),
+                            ),
+                          );
+                        }
+
+                        final shownUids = likedBy.take(2).toList();
+                        return FutureBuilder<List<DocumentSnapshot>>(
+                          future: Future.wait(
+                            shownUids.map(
+                              (id) =>
+                                  _firestore.collection('users').doc(id).get(),
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          builder: (_, snap) {
+                            String label = '$likes like';
+                            if (snap.hasData && snap.data!.isNotEmpty) {
+                              final names = snap.data!
+                                  .map(
+                                    (d) =>
+                                        (d.data()
+                                            as Map<
+                                              String,
+                                              dynamic
+                                            >?)?['username'] ??
+                                        'Utente',
+                                  )
+                                  .cast<String>()
+                                  .toList();
+                              if (names.length == 1) {
+                                label = 'Piace a ${names[0]}';
+                              } else if (names.length >= 2) {
+                                final others = likes - 2;
+                                label = others > 0
+                                    ? 'Piace a ${names[0]}, ${names[1]} '
+                                          'e altri $others'
+                                    : 'Piace a ${names[0]} e ${names[1]}';
+                              }
+                            }
+                            return InkWell(
+                              onTap: () => _showLikesModal(likedBy),
+                              child: Text(
+                                label,
+                                style: const TextStyle(
+                                  fontFamily: 'Cormorant',
+                                  fontSize: 14,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      }
 
-                          // Riga azioni + like summary
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              likesSummary(),
-                              Row(
+                      return Card(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        elevation: 3,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (data['imageUrl'] != null)
+                              ClipRRect(
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(10),
+                                ),
+                                child: Image.network(
+                                  data['imageUrl'],
+                                  width: double.infinity,
+                                  height: 220,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  IconButton(
-                                    icon: Icon(
-                                      youLike
-                                          ? Icons.favorite
-                                          : Icons.favorite_border,
-                                      color: youLike ? Colors.redAccent : null,
+                                  Text(
+                                    data['title'] ?? 'Senza titolo',
+                                    style: const TextStyle(
+                                      fontFamily: 'Cinzel',
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                    onPressed: () => _toggleLike(post),
-                                    tooltip: youLike
-                                        ? 'Togli Mi piace'
-                                        : 'Mi piace',
                                   ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.mode_comment_outlined,
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'di ${data['username'] ?? 'Anonimo'}',
+                                    style: TextStyle(
+                                      fontFamily: 'Cormorant',
+                                      fontSize: 14,
+                                      color: AppColors.subtext(context),
                                     ),
-                                    onPressed: () => _openComments(post.id),
-                                    tooltip: 'Commenti',
                                   ),
-                                  if (!isMine)
-                                    PopupMenuButton<String>(
-                                      onSelected: (value) {
-                                        if (value == 'amico') {
-                                          _sendFriendRequest(postOwnerId);
-                                        } else if (value == 'blocca') {
-                                          _blockUser(postOwnerId);
-                                        } else if (value == 'sblocca') {
-                                          _unblockUser(postOwnerId);
-                                        }
-                                      },
-                                      itemBuilder: (context) {
-                                        final isBlocked = _blockedUsers
-                                            .contains(postOwnerId);
-                                        return [
-                                          const PopupMenuItem(
-                                            value: 'amico',
-                                            child: Text('Aggiungi amico'),
-                                          ),
-                                          PopupMenuItem(
-                                            value: isBlocked
-                                                ? 'sblocca'
-                                                : 'blocca',
-                                            child: Text(
-                                              isBlocked
-                                                  ? 'Sblocca utente'
-                                                  : 'Blocca utente',
+                                  const SizedBox(height: 8),
+
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      likesSummary(),
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            icon: Icon(
+                                              youLike
+                                                  ? Icons.favorite
+                                                  : Icons.favorite_border,
+                                              color: youLike
+                                                  ? Colors.redAccent
+                                                  : null,
                                             ),
+                                            onPressed: () => _toggleLike(post),
+                                            tooltip: youLike
+                                                ? 'Togli Mi piace'
+                                                : 'Mi piace',
                                           ),
-                                        ];
-                                      },
-                                      icon: const Icon(Icons.more_vert),
-                                    ),
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.mode_comment_outlined,
+                                            ),
+                                            onPressed: () =>
+                                                _openComments(post.id),
+                                            tooltip: 'Commenti',
+                                          ),
+                                          if (!isMine)
+                                            PopupMenuButton<String>(
+                                              onSelected: (value) {
+                                                if (value == 'amico') {
+                                                  _sendFriendRequest(
+                                                    postOwnerId,
+                                                  );
+                                                } else if (value == 'blocca') {
+                                                  _blockUser(postOwnerId);
+                                                } else if (value == 'sblocca') {
+                                                  _unblockUser(postOwnerId);
+                                                }
+                                              },
+                                              itemBuilder: (context) {
+                                                final isBlocked = _blockedUsers
+                                                    .contains(postOwnerId);
+                                                return [
+                                                  const PopupMenuItem(
+                                                    value: 'amico',
+                                                    child: Text(
+                                                      'Aggiungi amico',
+                                                    ),
+                                                  ),
+                                                  PopupMenuItem(
+                                                    value: isBlocked
+                                                        ? 'sblocca'
+                                                        : 'blocca',
+                                                    child: Text(
+                                                      isBlocked
+                                                          ? 'Sblocca utente'
+                                                          : 'Blocca utente',
+                                                    ),
+                                                  ),
+                                                ];
+                                              },
+                                              icon: const Icon(Icons.more_vert),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ],
                               ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _isUploading ? null : _addPost,

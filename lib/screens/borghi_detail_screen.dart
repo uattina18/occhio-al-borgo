@@ -60,17 +60,22 @@ class _BorgoDetailScreenState extends State<BorgoDetailScreen> {
   Future<void> _addPhoto() async {
     final picked = await _picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
+
     setState(() => _photos.insert(0, picked.path));
     await _savePhotos();
     await _maybeUnlockBadge();
   }
 
+  // ✅ NUOVA FUNZIONE: usa la tua ScattaScreen invece della camera di sistema
   Future<void> _capturePhoto() async {
-    final picked = await _picker.pickImage(source: ImageSource.camera);
-    if (picked == null) return;
-    setState(() => _photos.insert(0, picked.path));
-    await _savePhotos();
-    await _maybeUnlockBadge();
+    await Navigator.pushNamed(
+      context,
+      '/scatta',
+      arguments: {'fromBorgoId': widget.id, 'fromBorgoName': widget.name},
+    );
+
+    // Ricarica le foto (in caso tu voglia salvarle in futuro tramite ScattaScreen)
+    await _loadPhotos();
   }
 
   Future<void> _deletePhoto(String path) async {
@@ -87,23 +92,25 @@ class _BorgoDetailScreenState extends State<BorgoDetailScreen> {
     if (!unlocked.contains('fotografa-locale')) {
       unlocked.add('fotografa-locale');
       await prefs.setStringList('unlocked_badges', unlocked);
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(
               '🏅 Hai sbloccato il badge “Fotografa locale”!',
             ),
+            backgroundColor: AppColors.primary(context),
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 3),
-            backgroundColor: AppColors.primary(context),
           ),
         );
       }
+
       setState(() => _badgeUnlocked = true);
     }
   }
 
-  // ✅ Link Wikipedia
+  // 🔗 Apri Wikipedia
   Future<void> _openWikipedia() async {
     final safeName = widget.name.replaceAll(' ', '_');
     final Uri url = Uri.parse(
@@ -114,18 +121,14 @@ class _BorgoDetailScreenState extends State<BorgoDetailScreen> {
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Impossibile aprire Wikipedia')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Errore apertura Wikipedia: $e')),
+          const SnackBar(content: Text('Impossibile aprire Wikipedia')),
         );
       }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Errore apertura Wikipedia: $e')));
     }
   }
 
@@ -152,7 +155,6 @@ class _BorgoDetailScreenState extends State<BorgoDetailScreen> {
                 fontSize: 16,
                 color: AppColors.subtext(context),
               ),
-              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
 
@@ -168,7 +170,7 @@ class _BorgoDetailScreenState extends State<BorgoDetailScreen> {
 
             const Divider(thickness: 1, height: 40),
 
-            // 📸 Foto e badge
+            // FOTO + BADGE
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -188,7 +190,6 @@ class _BorgoDetailScreenState extends State<BorgoDetailScreen> {
                   ),
               ],
             ),
-
             const SizedBox(height: 10),
 
             if (_photos.isEmpty)
@@ -209,7 +210,7 @@ class _BorgoDetailScreenState extends State<BorgoDetailScreen> {
                   crossAxisSpacing: 8,
                 ),
                 itemCount: _photos.length,
-                itemBuilder: (context, i) {
+                itemBuilder: (_, i) {
                   final path = _photos[i];
                   return Stack(
                     fit: StackFit.expand,
@@ -219,20 +220,20 @@ class _BorgoDetailScreenState extends State<BorgoDetailScreen> {
                         child: Image.file(File(path), fit: BoxFit.cover),
                       ),
                       Positioned(
-                        top: 6,
                         right: 6,
+                        top: 6,
                         child: GestureDetector(
                           onTap: () => _deletePhoto(path),
                           child: Container(
+                            padding: const EdgeInsets.all(4),
                             decoration: BoxDecoration(
                               color: AppColors.subtext(context),
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            padding: const EdgeInsets.all(4),
                             child: Icon(
                               Icons.delete,
-                              color: AppColors.card(context),
                               size: 18,
+                              color: AppColors.card(context),
                             ),
                           ),
                         ),
@@ -258,7 +259,7 @@ class _BorgoDetailScreenState extends State<BorgoDetailScreen> {
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
-                  onPressed: _capturePhoto,
+                  onPressed: _capturePhoto, // 👈 ora usa ScattaScreen
                   icon: const Icon(Icons.camera_alt),
                   label: const Text('Scatta'),
                   style: ElevatedButton.styleFrom(
