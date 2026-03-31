@@ -10,15 +10,17 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # 🌍 Condivisione e screenshot
   share_plus: ^10.0.0
   screenshot: ^3.0.0
 
-  # 🌍 Localizzazione e internazionalizzazione (usiamo file .dart, non .arb)
+  # 🌍 Localizzazione e internazionalizzazione
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
 
-  # 🔥 Firebase (compatibili e stabili)
+  # 🔥 Firebase
   firebase_core: ^4.2.0
   firebase_auth: ^6.1.1
   cloud_firestore: ^6.0.3
@@ -37,6 +39,10 @@ dependencies:
   geolocator: ^14.0.2
   sensors_plus: ^7.0.0
   image_picker: ^1.1.2
+  flutter_compass: ^0.8.0 # 👈 AGGIUNTO
+
+  # 🌐 HTTP (per chiamare il backend)
+  http: ^1.2.0 # 👈 AGGIUNTO
 
   # ⚡️ Batteria e connessione
   battery_plus: ^7.0.0
@@ -45,7 +51,7 @@ dependencies:
   # 🌍 URL esterni
   url_launcher: ^6.3.0
 
-  # 🖼️ Interfaccia e icone
+  # 🖼️ UI
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
@@ -55,19 +61,12 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.4
 
 flutter:
-  # 🚫 Disabilita la generazione automatica .arb
   uses-material-design: true
 
   assets:
-    - assets/images/logo_pages.png
-    - assets/images/login_bg.png
-    - assets/images/borgo_placeholder.png
-    - assets/data/eventi_liguria.json
-    - assets/data/borghi_min.json
-    - assets/data/badges.json
-    - assets/images/demo1.jpg
-    - assets/images/demo2.jpg
-    - assets/images/demo3.jpg
+    - assets/images/
+    - assets/data/
+    - assets/data/liguria/events_liguria.json
 
   fonts:
     - family: Cinzel
@@ -75,6 +74,7 @@ flutter:
         - asset: assets/fonts/Cinzel-Regular.ttf
         - asset: assets/fonts/Cinzel-Bold.ttf
           weight: 700
+
     - family: Cormorant
       fonts:
         - asset: assets/fonts/CormorantGaramond-VariableFont_wght.ttf
@@ -82,6 +82,6 @@ flutter:
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/images/logo_pages.png"
-  adaptive_icon_foreground: "assets/images/logo_pages.png"
+  image_path: assets/images/logo_pages.png
+  adaptive_icon_foreground: assets/images/logo_pages.png
   adaptive_icon_background: "#FFFFFF"

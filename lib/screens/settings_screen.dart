@@ -93,6 +93,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await FirebaseAuth.instance.signOut();
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
       }
@@ -142,6 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 30),
+
               const Text(
                 'Lingua',
                 style: TextStyle(fontFamily: 'Cinzel', fontSize: 18),
@@ -155,6 +157,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 30),
+
               const Text(
                 'Notifiche',
                 style: TextStyle(fontFamily: 'Cinzel', fontSize: 18),
@@ -173,6 +176,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 30),
+
               const Text(
                 'Debug',
                 style: TextStyle(fontFamily: 'Cinzel', fontSize: 18),
@@ -191,16 +195,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 40),
+
               Center(
                 child: ElevatedButton.icon(
                   onPressed: _logout,
-                  icon: const Icon(Icons.logout, color: Colors.white),
+                  icon: const Icon(Icons.logout),
                   label: const Text(
                     'Logout',
-                    style: TextStyle(fontFamily: 'Cinzel', color: Colors.white),
+                    style: TextStyle(fontFamily: 'Cinzel'),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF3a602a),
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       vertical: 12,
                       horizontal: 24,
@@ -215,16 +221,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ⭐ RADIO BUTTON MODERNO
   Widget _buildThemeOption(ThemeMode mode, String label, IconData icon) {
     final theme = Theme.of(context);
-    return RadioListTile<ThemeMode>(
+
+    return RadioMenuButton<ThemeMode>(
       value: mode,
       groupValue: _selectedMode,
       onChanged: (value) {
         if (value != null) _changeMode(value);
       },
-      activeColor: theme.primaryColor,
-      title: Row(
+      child: Row(
         children: [
           Icon(icon, color: theme.iconTheme.color),
           const SizedBox(width: 10),
@@ -239,14 +246,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildLanguageOption(Locale locale, String label, IconData icon) {
     final theme = Theme.of(context);
-    return RadioListTile<Locale>(
+
+    return RadioMenuButton<Locale>(
       value: locale,
       groupValue: _selectedLocale,
       onChanged: (value) {
         if (value != null) _changeLanguage(value);
       },
-      activeColor: theme.primaryColor,
-      title: Row(
+      child: Row(
         children: [
           Icon(icon, color: theme.iconTheme.color),
           const SizedBox(width: 10),

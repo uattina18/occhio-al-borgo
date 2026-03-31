@@ -1,10 +1,11 @@
 import 'dart:io';
-import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:occhio_al_borgo/theme/app_theme.dart';
 import '../widgets/bottom_navbar.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
 
 class BorghiRiconosciutiScreen extends StatefulWidget {
   const BorghiRiconosciutiScreen({super.key});
@@ -23,11 +24,56 @@ class _BorghiRiconosciutiScreenState extends State<BorghiRiconosciutiScreen> {
     _loadBorghi();
   }
 
+  /* =========================
+     DISTANZA
+     ========================= */
+  double calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    final dLat = (lat2 - lat1) * pi / 180;
+    final dLon = (lon2 - lon1) * pi / 180;
+
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180) *
+            cos(lat2 * pi / 180) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
+  }
+
+  /* =========================
+     MAPS
+     ========================= */
+  Future<void> openMaps(double lat, double lng, String mode) async {
+    final url = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=$mode',
+    );
+
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  /* =========================
+     LOAD BORGHI
+     ========================= */
   Future<void> _loadBorghi() async {
     final prefs = await SharedPreferences.getInstance();
-    // demo + ultimo borgo salvato in locale
+
     final lastName = prefs.getString('last_borgo_name');
     final lastPhoto = prefs.getString('last_borgo_photo');
+    final lastLat = prefs.getDouble('last_borgo_lat');
+    final lastLng = prefs.getDouble('last_borgo_lng');
+
+    double? userLat;
+    double? userLng;
+
+    try {
+      final position = await Geolocator.getCurrentPosition();
+      userLat = position.latitude;
+      userLng = position.longitude;
+    } catch (_) {}
 
     final List<Map<String, dynamic>> demo = [
       {'name': 'Tellaro', 'thumb': 'assets/images/demo1.jpg', 'count': 3},
@@ -42,6 +88,15 @@ class _BorghiRiconosciutiScreenState extends State<BorghiRiconosciutiScreen> {
             ? lastPhoto
             : 'assets/images/demo1.jpg',
         'count': 1,
+        'lat': lastLat,
+        'lng': lastLng,
+        'distance':
+            (lastLat != null &&
+                lastLng != null &&
+                userLat != null &&
+                userLng != null)
+            ? calculateDistance(userLat, userLng, lastLat, lastLng)
+            : null,
       });
     }
 
@@ -71,6 +126,7 @@ class _BorghiRiconosciutiScreenState extends State<BorghiRiconosciutiScreen> {
   @override
   Widget build(BuildContext context) {
     final topBarColor = const Color(0xFF91be7e);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -94,6 +150,7 @@ class _BorghiRiconosciutiScreenState extends State<BorghiRiconosciutiScreen> {
               itemBuilder: (context, i) {
                 final b = _borghi[i];
                 final isAsset = (b['thumb'] as String).startsWith('assets/');
+
                 return Card(
                   color: AppColors.card(context),
                   shape: RoundedRectangleBorder(
@@ -125,19 +182,47 @@ class _BorghiRiconosciutiScreenState extends State<BorghiRiconosciutiScreen> {
                       ),
                     ),
                     subtitle: Text(
-                      '${b['count']} foto',
+                      b['distance'] != null
+                          ? '${b['count']} foto • ${b['distance'].toStringAsFixed(1)} km'
+                          : '${b['count']} foto',
                       style: const TextStyle(fontFamily: 'Cormorant'),
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.chevron_right),
-                      onPressed: () {
-                        // 👉 Passo una String pura; la route la accetta
-                        Navigator.pushNamed(
-                          context,
-                          '/foto_borgo',
-                          arguments: b['name'],
-                        );
-                      },
+
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (b['lat'] != null && b['lng'] != null)
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.map),
+                            onSelected: (value) {
+                              openMaps(b['lat'], b['lng'], value);
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                value: 'walking',
+                                child: Text('🚶 A piedi'),
+                              ),
+                              PopupMenuItem(
+                                value: 'driving',
+                                child: Text('🚗 In auto'),
+                              ),
+                              PopupMenuItem(
+                                value: 'bicycling',
+                                child: Text('🚴 In bici'),
+                              ),
+                            ],
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right),
+                          onPressed: () {
+                            Navigator.pushNamed(
+                              context,
+                              '/foto_borgo',
+                              arguments: b['name'],
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 );

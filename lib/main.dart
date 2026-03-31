@@ -28,6 +28,7 @@ import 'screens/borghi_riconosciuti_screen.dart';
 import 'screens/foto_borgo_screen.dart';
 import 'screens/sos_screen.dart';
 import 'theme/app_theme.dart';
+import 'screens/events_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -139,6 +140,7 @@ class _OcchioAlBorgoAppState extends State<OcchioAlBorgoApp> {
         '/modifica_dati': (context) => const ModificaDatiScreen(),
         '/sos': (context) => const SosScreen(),
         '/borghi_riconosciuti': (context) => const BorghiRiconosciutiScreen(),
+        '/events': (context) => const EventsScreen(),
         '/chat': (context) {
           final args =
               ModalRoute.of(context)!.settings.arguments
