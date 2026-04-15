@@ -30,8 +30,6 @@ class _ScattaScreenState extends State<ScattaScreen> {
   double? _longitude;
   double? _azimuth;
 
-  String? _currentBorgo;
-
   StreamSubscription<MagnetometerEvent>? _compassSubscription;
   StreamSubscription<Position>? _positionSubscription;
 
@@ -105,6 +103,13 @@ class _ScattaScreenState extends State<ScattaScreen> {
     var response = await request.send();
     var resBody = await response.stream.bytesToString();
 
+    debugPrint("STATUS: ${response.statusCode}");
+    debugPrint("BODY: $resBody");
+
+    if (response.statusCode != 200) {
+      throw Exception("Backend error ${response.statusCode}: $resBody");
+    }
+
     return jsonDecode(resBody);
   }
 
@@ -139,7 +144,6 @@ class _ScattaScreenState extends State<ScattaScreen> {
 
       final candidates = result["candidates"];
 
-      /* 🔥 BLOCCO SE NON È BORGO */
       if (candidates == null || candidates.isEmpty) {
         if (!mounted) return;
 
@@ -171,13 +175,11 @@ class _ScattaScreenState extends State<ScattaScreen> {
         DateTime.now().toIso8601String(),
       );
 
-      /* 🔥 SALVI COORDINATE DEL BORGO (GIUSTO) */
       await prefs.setDouble("last_borgo_lat", borgoLat);
       await prefs.setDouble("last_borgo_lng", borgoLng);
 
       if (!mounted) return;
 
-      /* 🔥 POPUP FIGO */
       showDialog(
         context: context,
         builder: (_) => Dialog(
@@ -217,6 +219,22 @@ class _ScattaScreenState extends State<ScattaScreen> {
       );
     } catch (e) {
       debugPrint("❌ Errore scatto: $e");
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Errore riconoscimento"),
+          content: Text(e.toString()),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
