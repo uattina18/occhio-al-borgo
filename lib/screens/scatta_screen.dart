@@ -93,7 +93,7 @@ class _ScattaScreenState extends State<ScattaScreen> {
   ) async {
     var request = http.MultipartRequest(
       'POST',
-      Uri.parse('http://192.168.178.24:8000/recognize'),
+      Uri.parse('https://occhio-al-borgo-backend.onrender.com/recognize'),
     );
 
     request.files.add(await http.MultipartFile.fromPath('file', imagePath));
