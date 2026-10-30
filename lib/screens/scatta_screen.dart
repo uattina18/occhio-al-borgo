@@ -2,17 +2,10 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
 import 'package:http/http.dart' as http;
-
-import '../widgets/bottom_navbar.dart';
-import 'package:occhio_al_borgo/theme/app_theme.dart';
 
 class ScattaScreen extends StatefulWidget {
   const ScattaScreen({super.key});
@@ -30,39 +23,43 @@ class _ScattaScreenState extends State<ScattaScreen> {
   double? _longitude;
   double? _azimuth;
 
-  StreamSubscription<MagnetometerEvent>? _compassSubscription;
-  StreamSubscription<Position>? _positionSubscription;
+  StreamSubscription<MagnetometerEvent>? _compassSub;
+  StreamSubscription<Position>? _gpsSub;
 
   @override
   void initState() {
     super.initState();
     _initCamera();
-    _startLocationUpdates();
-    _listenCompass();
+    _initGPS();
+    _initCompass();
   }
 
-  /* ========================= CAMERA ========================= */
+  // ================= CAMERA =================
 
   Future<void> _initCamera() async {
     try {
       final cameras = await availableCameras();
-      _controller = CameraController(cameras.first, ResolutionPreset.medium);
+      _controller = CameraController(
+        cameras.first,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+
       await _controller!.initialize();
 
       if (!mounted) return;
       setState(() => _isReady = true);
     } catch (e) {
-      debugPrint("❌ Errore camera: $e");
+      debugPrint("❌ Camera error: $e");
     }
   }
 
-  /* ========================= GPS ========================= */
+  // ================= GPS =================
 
-  void _startLocationUpdates() async {
+  Future<void> _initGPS() async {
     await Geolocator.requestPermission();
 
-    _positionSubscription = Geolocator.getPositionStream().listen((pos) {
-      if (!mounted) return;
+    _gpsSub = Geolocator.getPositionStream().listen((pos) {
       setState(() {
         _latitude = pos.latitude;
         _longitude = pos.longitude;
@@ -70,10 +67,10 @@ class _ScattaScreenState extends State<ScattaScreen> {
     });
   }
 
-  /* ========================= COMPASS ========================= */
+  // ================= COMPASS =================
 
-  void _listenCompass() {
-    _compassSubscription = magnetometerEvents.listen((event) {
+  void _initCompass() {
+    _compassSub = magnetometerEvents.listen((event) {
       final heading = atan2(event.y, event.x) * (180 / pi);
       setState(() {
         _azimuth = (heading + 360) % 360;
@@ -81,216 +78,104 @@ class _ScattaScreenState extends State<ScattaScreen> {
     });
   }
 
-  /* ========================= BACKEND ========================= */
+  // ================= BACKEND =================
 
-  Future<Map<String, dynamic>> _callBackendAI(
-    String imagePath,
-    double lat,
-    double lng,
-    double heading,
-  ) async {
+  Future<Map<String, dynamic>> _callBackend(String path) async {
     var request = http.MultipartRequest(
       'POST',
       Uri.parse('https://occhio-al-borgo-backend.onrender.com/recognize'),
     );
 
-    request.files.add(await http.MultipartFile.fromPath('file', imagePath));
+    request.files.add(await http.MultipartFile.fromPath('file', path));
 
-    request.fields['lat'] = lat.toString();
-    request.fields['lng'] = lng.toString();
-    request.fields['heading'] = heading.toString();
+    request.fields['lat'] = _latitude.toString();
+    request.fields['lng'] = _longitude.toString();
+    request.fields['heading'] = _azimuth.toString();
 
-    var response = await request.send();
-    var resBody = await response.stream.bytesToString();
+    try {
+      var response = await request.send().timeout(const Duration(seconds: 25));
+      var body = await response.stream.bytesToString();
 
-    debugPrint("STATUS: ${response.statusCode}");
-    debugPrint("BODY: $resBody");
-
-    if (response.statusCode != 200) {
-      throw Exception("Backend error ${response.statusCode}: $resBody");
+      return jsonDecode(body);
+    } catch (e) {
+      throw Exception("Connessione fallita: $e");
     }
-
-    return jsonDecode(resBody);
   }
 
-  /* ========================= CAPTURE ========================= */
+  // ================= SCATTO =================
 
   Future<void> _capture() async {
     if (_controller == null || _isCapturing) return;
+
     setState(() => _isCapturing = true);
 
     try {
-      final img = await _controller!.takePicture();
+      final file = await _controller!.takePicture();
 
-      final dir = await getApplicationDocumentsDirectory();
-      final path = p.join(
-        dir.path,
-        "borgo_${DateTime.now().millisecondsSinceEpoch}.jpg",
-      );
-
-      await img.saveTo(path);
-
-      if (_latitude == null || _longitude == null || _azimuth == null) {
-        setState(() => _isCapturing = false);
-        return;
-      }
-
-      final result = await _callBackendAI(
-        path,
-        _latitude!,
-        _longitude!,
-        _azimuth!,
-      );
+      final result = await _callBackend(file.path);
 
       final candidates = result["candidates"];
 
       if (candidates == null || candidates.isEmpty) {
-        if (!mounted) return;
-
-        showDialog(
-          context: context,
-          builder: (_) => const AlertDialog(
-            title: Text("🤖 Analisi immagine"),
-            content: Text(
-              "Non sembra esserci un borgo.\nProva a inquadrare meglio.",
-            ),
-          ),
-        );
-
-        setState(() => _isCapturing = false);
+        _showDialog("🤖 AI", "Non sembra esserci un borgo.");
         return;
       }
 
-      final top = candidates[0];
+      final name = candidates[0]["name"];
 
-      final name = top["name"];
-      final borgoLat = top["lat"];
-      final borgoLng = top["lng"];
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString("last_borgo_photo", path);
-      await prefs.setString("last_borgo_name", name);
-      await prefs.setString(
-        "last_borgo_date",
-        DateTime.now().toIso8601String(),
-      );
-
-      await prefs.setDouble("last_borgo_lat", borgoLat);
-      await prefs.setDouble("last_borgo_lng", borgoLng);
-
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (_) => Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.location_on, size: 40, color: Colors.green),
-                const SizedBox(height: 10),
-                Text(
-                  name,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontFamily: 'Cinzel',
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  "Borgo riconosciuto",
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("OK"),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+      _showDialog("📍 Borgo trovato", name);
     } catch (e) {
-      debugPrint("❌ Errore scatto: $e");
-
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Errore riconoscimento"),
-          content: Text(e.toString()),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"),
-            ),
-          ],
-        ),
-      );
+      _showDialog("❌ Errore", e.toString());
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
   }
 
+  // ================= UI =================
+
+  void _showDialog(String title, String msg) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(title: Text(title), content: Text(msg)),
+    );
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
-    _compassSubscription?.cancel();
-    _positionSubscription?.cancel();
+    _gpsSub?.cancel();
+    _compassSub?.cancel();
     super.dispose();
   }
-
-  /* ========================= UI ========================= */
 
   @override
   Widget build(BuildContext context) {
     if (!_isReady) {
-      return Scaffold(
-        backgroundColor: AppColors.background(context),
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.accent(context)),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final panelColor = const Color.fromARGB(140, 0, 0, 0);
-
     return Scaffold(
-      backgroundColor: AppColors.background(context),
-      bottomNavigationBar: CustomBottomNavBar(
-        currentIndex: 2,
-        onTap: (i) => Navigator.pushReplacementNamed(
-          context,
-          ['/home', '/explore', '/scatta', '/notifiche', '/profilo'][i],
-        ),
-        backgroundColor: AppColors.primary(context),
-      ),
       body: Stack(
         children: [
           CameraPreview(_controller!),
 
+          // GPS overlay
           Positioned(
             bottom: 140,
             left: 20,
-            child: _buildPanel(
-              panelColor,
-              Text(
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              color: Colors.black54,
+              child: Text(
                 _latitude != null
                     ? "Lat: ${_latitude!.toStringAsFixed(5)}\nLng: ${_longitude!.toStringAsFixed(5)}"
-                    : "Localizzazione…",
+                    : "GPS…",
                 style: const TextStyle(color: Colors.white),
               ),
             ),
           ),
 
+          // Bottone scatto
           Positioned(
             bottom: 40,
             left: 0,
@@ -302,9 +187,9 @@ class _ScattaScreenState extends State<ScattaScreen> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: AppColors.accent(context),
+                    color: _isCapturing ? Colors.grey : Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 4),
+                    border: Border.all(color: Colors.black, width: 3),
                   ),
                 ),
               ),
@@ -312,17 +197,6 @@ class _ScattaScreenState extends State<ScattaScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildPanel(Color bg, Widget child) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: child,
     );
   }
 }
