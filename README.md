@@ -1,6 +1,6 @@
 # Occhio al Borgo
 
-App mobile per scoprire i borghi italiani come in un gioco: fotografi un borgo, l'app lo riconosce da posizione, bussola e immagine, e ti mostra informazioni ed eventi del luogo.
+App mobile per scoprire i borghi italiani come in un gioco: fotografi un borgo e un'intelligenza artificiale lo riconosce, aiutata da posizione e bussola, poi l'app ti mostra informazioni ed eventi del luogo.
 
 > Progetto personale di Marta Righetti, in sviluppo.
 
@@ -18,7 +18,7 @@ I borghi minori sono spesso poco conosciuti e a rischio abbandono, e le informaz
 
 ## Cosa fa
 
-- **Scatta un borgo**: fotocamera, GPS e bussola indicano dove ti trovi e verso cosa stai puntando. La foto viene inviata a un backend che sceglie il borgo più probabile tra quelli vicini.
+- **Riconoscimento dei borghi con l'AI**: scatti una foto e un modello di intelligenza artificiale (Google Gemini) la confronta con i borghi vicini per capire quale stai guardando. GPS e bussola restringono i candidati e fanno da ripiego quando l'AI non è sicura.
 - **Esplora**: ricerca dei borghi e dettaglio di ogni borgo.
 - **Eventi**: elenco degli eventi collegati ai borghi e segnalazione di nuovi eventi.
 - **Profilo e gamification**: borghi riconosciuti, salvati e visitati, badge, invito di amici con codice referral.
@@ -26,12 +26,14 @@ I borghi minori sono spesso poco conosciuti e a rischio abbandono, e le informaz
 - **Sicurezza**: pagina SOS che apre il telefono con il 112 già composto.
 - **Doppia lingua**: italiano e inglese.
 
-## Come funziona il riconoscimento
+## Come funziona il riconoscimento con l'AI
 
 1. L'app invia al backend la foto, la posizione e la direzione della bussola.
-2. Il backend seleziona i borghi vicini e li ordina per distanza e direzione.
-3. Un modello di Google (Gemini) confronta la foto con i candidati.
-4. Se il modello non è abbastanza sicuro, si usa la sola posizione come ripiego.
+2. Il backend seleziona i borghi vicini e li ordina per distanza e direzione, così l'AI deve scegliere tra pochi candidati e non tra tutta Italia.
+3. Il modello Google Gemini riceve la foto e i candidati e risponde se la scena è un borgo, quale candidato corrisponde e con quale sicurezza.
+4. Se la sicurezza è sopra una soglia, il borgo è confermato; altrimenti l'app usa la sola posizione come ripiego.
+
+Il riconoscimento è nato con Google Cloud Vision, che etichettava la scena in modo generico, ed è passato a Gemini per confrontare la foto con i borghi reali della zona.
 
 Il backend è in un repository separato: [occhio-al-borgo-backend](https://github.com/uattina18/occhio-al-borgo-backend).
 
@@ -40,7 +42,7 @@ Il backend è in un repository separato: [occhio-al-borgo-backend](https://githu
 - Flutter e Dart
 - Firebase: Authentication, Cloud Firestore, Storage e Cloud Functions (in TypeScript)
 - Fotocamera, geolocalizzazione e sensori del telefono
-- Backend FastAPI (repository separato)
+- Intelligenza artificiale: Google Gemini, tramite un backend FastAPI (repository separato)
 - Progettazione in Penpot
 
 ## Come avviarlo
