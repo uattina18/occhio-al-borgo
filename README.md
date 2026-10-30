@@ -4,13 +4,6 @@ App mobile per scoprire i borghi italiani come in un gioco: fotografi un borgo e
 
 > Progetto personale di Marta Righetti, in sviluppo.
 
-<!-- Aggiungi qui 2-3 screenshot, per esempio:
-<p>
-  <img src="docs/screenshots/home.png" width="220" alt="Home">
-  <img src="docs/screenshots/scatta.png" width="220" alt="Scatta un borgo">
-  <img src="docs/screenshots/profilo.png" width="220" alt="Profilo e badge">
-</p>
--->
 
 ## Perché
 
