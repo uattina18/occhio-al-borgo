@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:occhio_al_borgo/services/chat_service.dart';
 import 'package:occhio_al_borgo/theme/app_theme.dart';
 
 class InvitaAmicoScreen extends StatefulWidget {
@@ -43,6 +44,36 @@ class _InvitaAmicoScreenState extends State<InvitaAmicoScreen>
 
   // ---------- AZIONI FIRESTORE ----------
 
+  Future<void> _openChat(Map<String, dynamic> user) async {
+    try {
+      final chatId = await ChatService.getOrCreateChat(user['uid']);
+      if (!mounted) return;
+      Navigator.pushNamed(
+        context,
+        '/chat',
+        arguments: {'chatId': chatId, 'username': user['username'] ?? 'Amico'},
+      );
+    } on FirebaseException catch (e) {
+      debugPrint('Errore apertura chat: ${e.code} ${e.message}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.code == 'permission-denied'
+                ? 'Permesso negato da Firebase (controlla le regole di Firestore).'
+                : 'Errore: ${e.code}',
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Errore apertura chat: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Non riesco ad aprire la chat.')),
+      );
+    }
+  }
+
   Future<void> _sendFriendRequest(String targetUid) async {
     final me = _auth.currentUser;
     if (me == null || me.uid == targetUid) return;
@@ -50,40 +81,61 @@ class _InvitaAmicoScreenState extends State<InvitaAmicoScreen>
     final meRef = _firestore.collection('users').doc(me.uid);
     final targetRef = _firestore.collection('users').doc(targetUid);
 
-    await _firestore.runTransaction((tx) async {
-      final meSnap = await tx.get(meRef);
-      final targetSnap = await tx.get(targetRef);
-      if (!targetSnap.exists || !meSnap.exists) return;
+    String message = 'Richiesta inviata ✅';
 
-      final meData = meSnap.data() as Map<String, dynamic>;
-      final targetData = targetSnap.data() as Map<String, dynamic>;
+    try {
+      await _firestore.runTransaction((tx) async {
+        final meSnap = await tx.get(meRef);
+        final targetSnap = await tx.get(targetRef);
+        if (!meSnap.exists) {
+          message = 'Il tuo profilo non è stato trovato. Esci e rientra.';
+          return;
+        }
+        if (!targetSnap.exists) {
+          message = 'Questo utente non esiste più.';
+          return;
+        }
 
-      final meFriends = List<String>.from(meData['friends'] ?? []);
-      final meSent = List<String>.from(meData['sentRequests'] ?? []);
-      final targetFriends = List<String>.from(targetData['friends'] ?? []);
-      final targetPending = List<String>.from(
-        targetData['pendingRequests'] ?? [],
-      );
+        final meData = meSnap.data() as Map<String, dynamic>;
+        final targetData = targetSnap.data() as Map<String, dynamic>;
 
-      if (meFriends.contains(targetUid) ||
-          meSent.contains(targetUid) ||
-          targetPending.contains(me.uid)) {
-        return;
-      }
+        final meFriends = List<String>.from(meData['friends'] ?? []);
+        final meSent = List<String>.from(meData['sentRequests'] ?? []);
+        final targetPending = List<String>.from(
+          targetData['pendingRequests'] ?? [],
+        );
 
-      meSent.add(targetUid);
-      targetPending.add(me.uid);
+        if (meFriends.contains(targetUid)) {
+          message = 'Siete già amici.';
+          return;
+        }
+        if (meSent.contains(targetUid) || targetPending.contains(me.uid)) {
+          message = 'Richiesta già inviata.';
+          return;
+        }
 
-      tx.set(meRef, {'sentRequests': meSent}, SetOptions(merge: true));
-      tx.set(targetRef, {
-        'pendingRequests': targetPending,
-      }, SetOptions(merge: true));
-    });
+        meSent.add(targetUid);
+        targetPending.add(me.uid);
+
+        tx.set(meRef, {'sentRequests': meSent}, SetOptions(merge: true));
+        tx.set(targetRef, {
+          'pendingRequests': targetPending,
+        }, SetOptions(merge: true));
+      });
+    } on FirebaseException catch (e) {
+      debugPrint('Errore richiesta amicizia: ${e.code} ${e.message}');
+      message = e.code == 'permission-denied'
+          ? 'Permesso negato da Firebase (controlla le regole di Firestore).'
+          : 'Errore: ${e.code}';
+    } catch (e) {
+      debugPrint('Errore richiesta amicizia: $e');
+      message = 'Errore imprevisto, riprova.';
+    }
 
     if (mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Richiesta inviata ✅')));
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -328,10 +380,20 @@ class _InvitaAmicoScreenState extends State<InvitaAmicoScreen>
                       uids: friends,
                       emptyText:
                           'Non hai ancora amici. Cerca qualcuno e invia una richiesta!',
-                      trailingBuilder: (context, user) => IconButton(
-                        icon: const Icon(Icons.person_remove),
-                        tooltip: 'Rimuovi amico',
-                        onPressed: () => _removeFriend(user['uid']),
+                      trailingBuilder: (context, user) => Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.chat_bubble_outline),
+                            tooltip: 'Scrivi un messaggio',
+                            onPressed: () => _openChat(user),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.person_remove),
+                            tooltip: 'Rimuovi amico',
+                            onPressed: () => _removeFriend(user['uid']),
+                          ),
+                        ],
                       ),
                     ),
                     _FriendsList(

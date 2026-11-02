@@ -284,7 +284,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
                   _button(
                     Icons.person_add_alt_1,
                     loc?.addFriend ?? 'AGGIUNGI UN AMICO',
-                    () {},
+                    () => Navigator.pushNamed(context, '/invita_amico'),
                   ),
                   const SizedBox(height: 12),
                   _button(
