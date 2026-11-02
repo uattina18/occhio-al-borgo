@@ -215,8 +215,21 @@ class _CommunityScreenState extends State<CommunityScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
+          if (snapshot.hasError) {
+            debugPrint('❌ Community: ${snapshot.error}');
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Non riesco a caricare i post.\nControlla la connessione e riprova più tardi.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return _demoList(); // 🔥 DEMO ATTIVO
+            return _demoList(); // Nessun post ancora: mostra gli esempi
           }
 
           final posts = snapshot.data!.docs;

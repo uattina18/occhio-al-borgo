@@ -96,10 +96,31 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacementNamed(context, '/home');
       }
     } on FirebaseAuthException catch (e) {
-      String msg = 'Errore di accesso.';
-      if (e.code == 'user-not-found') msg = 'Utente non trovato.';
-      if (e.code == 'wrong-password') msg = 'Password errata.';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      String msg = 'Errore di accesso (${e.code}).';
+      switch (e.code) {
+        case 'invalid-credential':
+        case 'user-not-found':
+        case 'wrong-password':
+          msg = 'Email o password non corrette.';
+          break;
+        case 'invalid-email':
+          msg = 'L\'email non è scritta correttamente.';
+          break;
+        case 'user-disabled':
+          msg = 'Questo account è stato disattivato.';
+          break;
+        case 'too-many-requests':
+          msg = 'Troppi tentativi. Riprova tra qualche minuto.';
+          break;
+        case 'network-request-failed':
+          msg = 'Nessuna connessione a internet.';
+          break;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Errore imprevisto, riprova.')),
