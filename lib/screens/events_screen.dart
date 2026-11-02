@@ -51,17 +51,17 @@ class _EventsScreenState extends State<EventsScreen> {
           .collection('events')
           .get();
 
-      print("🔥 DOCUMENTI TROVATI: ${snapshot.docs.length}");
+      debugPrint("🔥 DOCUMENTI TROVATI: ${snapshot.docs.length}");
 
       for (var doc in snapshot.docs) {
-        print("👉 DOC ID: ${doc.id}");
-        print(doc.data());
+        debugPrint("👉 DOC ID: ${doc.id}");
+        debugPrint(doc.data());
       }
 
       _allEvents = snapshot.docs.map((doc) => doc.data()).toList();
       _filteredEvents = _allEvents;
     } catch (e) {
-      print("❌ ERRORE FIRESTORE: $e");
+      debugPrint("❌ ERRORE FIRESTORE: $e");
     }
 
     setState(() => _loading = false);

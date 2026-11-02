@@ -265,7 +265,7 @@ class _GalleriaScreenState extends State<GalleriaScreen>
                               decoration: BoxDecoration(
                                 color: AppColors.foreground(
                                   context,
-                                ).withOpacity(0.6),
+                                ).withValues(alpha: 0.6),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(

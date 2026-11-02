@@ -56,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.remove('email');
       }
     } catch (e) {
-      print('Errore _checkRememberedUser: $e');
+      debugPrint('Errore _checkRememberedUser: $e');
     }
   }
 
@@ -125,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Errore imprevisto, riprova.')),
       );
-      print('Errore generico login: $e');
+      debugPrint('Errore generico login: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -167,7 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
           content: Text('Errore durante l’autenticazione biometrica'),
         ),
       );
-      print('Errore biometria: $e');
+      debugPrint('Errore biometria: $e');
     }
   }
 
@@ -181,7 +181,9 @@ class _LoginScreenState extends State<LoginScreen> {
         fit: StackFit.expand,
         children: [
           Image.asset('assets/images/login_bg.png', fit: BoxFit.cover),
-          Container(color: AppColors.foreground(context).withOpacity(0.35)),
+          Container(
+            color: AppColors.foreground(context).withValues(alpha: 0.35),
+          ),
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 32),

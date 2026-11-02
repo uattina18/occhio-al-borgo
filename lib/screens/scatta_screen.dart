@@ -1,10 +1,9 @@
 import 'dart:convert';
-import 'dart:math';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:sensors_plus/sensors_plus.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:http/http.dart' as http;
 
 class ScattaScreen extends StatefulWidget {
@@ -22,8 +21,9 @@ class _ScattaScreenState extends State<ScattaScreen> {
   double? _latitude;
   double? _longitude;
   double? _azimuth;
+  bool _gpsProblem = false;
 
-  StreamSubscription<MagnetometerEvent>? _compassSub;
+  StreamSubscription<CompassEvent>? _compassSub;
   StreamSubscription<Position>? _gpsSub;
 
   @override
@@ -57,21 +57,44 @@ class _ScattaScreenState extends State<ScattaScreen> {
   // ================= GPS =================
 
   Future<void> _initGPS() async {
-    await Geolocator.requestPermission();
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
 
-    _gpsSub = Geolocator.getPositionStream().listen((pos) {
-      setState(() {
-        _latitude = pos.latitude;
-        _longitude = pos.longitude;
-      });
-    });
+    if (!enabled ||
+        permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      if (mounted) setState(() => _gpsProblem = true);
+      return;
+    }
+
+    _gpsSub = Geolocator.getPositionStream().listen(
+      (pos) {
+        if (!mounted) return;
+        setState(() {
+          _latitude = pos.latitude;
+          _longitude = pos.longitude;
+          _gpsProblem = false;
+        });
+      },
+      onError: (e) {
+        debugPrint('❌ GPS error: $e');
+        if (mounted) setState(() => _gpsProblem = true);
+      },
+    );
   }
 
   // ================= COMPASS =================
 
   void _initCompass() {
-    _compassSub = magnetometerEvents.listen((event) {
-      final heading = atan2(event.y, event.x) * (180 / pi);
+    final stream = FlutterCompass.events;
+    if (stream == null) return; // il telefono non ha la bussola
+
+    _compassSub = stream.listen((event) {
+      final heading = event.heading;
+      if (heading == null || !mounted) return;
       setState(() {
         _azimuth = (heading + 360) % 360;
       });
@@ -88,9 +111,11 @@ class _ScattaScreenState extends State<ScattaScreen> {
 
     request.files.add(await http.MultipartFile.fromPath('file', path));
 
-    request.fields['lat'] = _latitude.toString();
-    request.fields['lng'] = _longitude.toString();
-    request.fields['heading'] = _azimuth.toString();
+    request.fields['lat'] = _latitude!.toString();
+    request.fields['lng'] = _longitude!.toString();
+    if (_azimuth != null) {
+      request.fields['heading'] = _azimuth!.toString();
+    }
 
     try {
       var response = await request.send().timeout(const Duration(seconds: 25));
@@ -106,6 +131,16 @@ class _ScattaScreenState extends State<ScattaScreen> {
 
   Future<void> _capture() async {
     if (_controller == null || _isCapturing) return;
+
+    if (_latitude == null || _longitude == null) {
+      _showDialog(
+        '📍 Posizione non disponibile',
+        _gpsProblem
+            ? 'Attiva il GPS e consenti all\'app di usare la posizione, poi riprova.'
+            : 'Sto ancora cercando il segnale GPS. Aspetta qualche secondo e riprova.',
+      );
+      return;
+    }
 
     setState(() => _isCapturing = true);
 
@@ -169,7 +204,7 @@ class _ScattaScreenState extends State<ScattaScreen> {
               child: Text(
                 _latitude != null
                     ? "Lat: ${_latitude!.toStringAsFixed(5)}\nLng: ${_longitude!.toStringAsFixed(5)}"
-                    : "GPS…",
+                    : (_gpsProblem ? "GPS non disponibile" : "GPS…"),
                 style: const TextStyle(color: Colors.white),
               ),
             ),
